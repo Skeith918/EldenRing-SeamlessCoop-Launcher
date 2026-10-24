@@ -1,0 +1,6 @@
+# exe compilé : publié dans les releases GitHub, pas dans le dépôt
+*.exe
+
+# sorties du banc d'essai
+_test/
+_test_bin/
