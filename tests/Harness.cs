@@ -235,13 +235,39 @@ static class Harness
         var bar = Installer.Import(Zip("Bar.zip", "mods/Bar.dll=a", "mods/Bar/config.ini=[bar]\nx = 1"), cat, store, out an);
         var fork = Installer.Import(Zip("Bar Fork.zip", "mods/Bar.dll=b", "mods/Bar/config.ini=[bar]\nx = 2"), cat, store, out an);
         Check(Conflicts.Compute(store, cat)[fork.Id].Any(c => c.With == bar.Id && c.Kind == "deploy"), "même fichier copié dans le jeu (mods/Bar/config.ini) : incompatibles");
-        var mfg = Installer.Import(Zip("Map for Goblins Expanded v1.4.2-7156-1-4-2-1761327935.zip", "regulation.bin=z", "full_version_to_customize__regulation.bin=zz",
+        var mfg = Installer.Import(Zip("Map for Goblins Expanded v1.4.2.zip", "regulation.bin=z", "full_version_to_customize__regulation.bin=zz",
                                        "menu/02_120_worldmap.gfx=m", "script/talk/m00_00_00_00.talkesdbnd.dcx=t"), cat, store, out an);
-        Check(mfg.Id == "map-for-goblins-expanded" && mfg.FromCatalog && mfg.Packages.SequenceEqual(new[] { "" }), "mod Nexus du catalogue sans disposition décrite : reconnu, contenu analysé");
+        Check(mfg.Id == "map-for-goblins-expanded" && mfg.FromCatalog && mfg.Packages.SequenceEqual(new[] { "" }) && mfg.Version == "v1.4.2",
+              "mod Nexus du catalogue sans disposition décrite : reconnu par son nom, contenu analysé");
         Check(Conflicts.Compute(store, cat)[mfg.Id].Any(c => c.With == reg.Id && c.Files.Contains("regulation.bin")), "deux regulation.bin différents : incompatibles");
         off = Conflicts.Resolve(store, cat);
         Check(off.Count == 2 && off.Any(o => o.Key == fork) && off.Any(o => o.Key == mfg) && reg.Enabled && bar.Enabled && Conflicts.Resolve(store, cat).Count == 0,
               "après résolution : plus aucun couple incompatible activé");
+
+        Console.WriteLine("== Version publiée sur Nexus avant GitHub");
+        Check(Versions.Compare("v2.0.2", "2.0.1") > 0 && Versions.Compare("2.0.1", "v2.0.1") == 0 && Versions.Compare("2.0.10", "2.0.9") > 0
+              && Versions.Compare("Binaries", "2022-05") == null, "comparaison de numéros de version");
+        Check(Versions.FromFileName("Seamless Co-op v2.0.2.zip") == "v2.0.2" && Versions.FromFileName("Seamless.Co-op.v1.9.8-510-1-9-8-1776128433.zip") == "v1.9.8"
+              && Versions.FromFileName("Malenia HD.zip") == null, "version lue dans le nom de l'archive (ancien et nouveau nommage Nexus)");
+        var live = Nexus.LatestVersions(new[] { 510 }).Result;
+        var liveSeamless = live.ContainsKey(510) ? live[510] : null;
+        Check(Versions.Compare(liveSeamless, "1.0") > 0, "version de Seamless sur Nexus lue sans compte : " + liveSeamless + " (GitHub : " + s.Tag + ")");
+        Check(Installer.NexusAhead(cat, store, new Dictionary<int, string> { { 510, "99.0" } }).Select(a => a.Key.Id).SequenceEqual(new[] { Seamless.Id })
+              && Installer.NexusAhead(cat, store, new Dictionary<int, string> { { 510, s.Version }, { 216, "99.0" } }).Count == 0,
+              "Nexus en avance sur GitHub : signalé pour Seamless, jamais pour un mod à version figée");
+        var pwd = Ini.Load(Path.Combine(s.Dir, "SeamlessCoop", "ersc_settings.ini")).Values()["cooppassword"];
+        Func<string, string> seamlessZip = name => Zip(name, "SeamlessCoop/ersc.dll=x", "SeamlessCoop/ersc_settings.ini=[PASSWORD]\ncooppassword = \n",
+                                                       "SeamlessCoop/locale/english.json={\"k\":\"v\"}", "ersc_launcher.exe=x");
+        var imp = Installer.Import(seamlessZip("Seamless Co-op v99.0.zip"), cat, store, out an);
+        Check(imp.Id == Seamless.Id && imp.Version == "v99.0" && imp.Source == "nexus" && store.Mods.Count(x => x.Id == Seamless.Id) == 1,
+              "zip Nexus au nouveau nommage (« Seamless Co-op v99.0.zip ») reconnu par son contenu, sans doublon");
+        Check(Ini.Load(Path.Combine(imp.Dir, "SeamlessCoop", "ersc_settings.ini")).Values()["cooppassword"] == pwd && File.Exists(Path.Combine(imp.Dir, "SeamlessCoop", "locale", "french.json")),
+              "Seamless importé : mot de passe conservé, traductions générées");
+        Check(!Installer.FindUpdates(cat, store).Result.Any(u => u.Key.Id == Seamless.Id), "version importée plus récente que GitHub : jamais remplacée par une plus ancienne");
+        Installer.Import(seamlessZip("Seamless Co-op v1.0.zip"), cat, store, out an);
+        Check(Installer.FindUpdates(cat, store).Result.Any(u => u.Key.Id == Seamless.Id), "version importée plus ancienne : mise à jour GitHub proposée");
+        s = Installer.InstallCatalogMod(seam, store, null).Result;
+        Check(s.Source == "github" && s.Version == s.Tag && store.Mods[0] == s, "réinstallé depuis GitHub : suivi normal, toujours chargé en premier");
 
         Console.WriteLine("== Nexus (en ligne)");
         var found = Nexus.Search("fps", 5).Result;
@@ -255,6 +281,7 @@ static class Harness
         st.Set("game_version", "2.6.0"); // …et le jeu vient de changer de version
         st.Set("language", "fr");
         st.SetBool("legacy_declined", true);
+        st.Set("nexus_notified_" + Seamless.Id, liveSeamless); // l'avis « nouvelle version sur Nexus » est testé à part, à la fin
         st.Save();
         var ui = new MainUi(game);
         var win = Show(ui, 6);
@@ -339,6 +366,25 @@ static class Harness
         Pump(0.4);
         Render(Find<FrameworkElement>(win, "Root"), "ui_es_advanced.png");
         win.Close();
+
+        if (Versions.Compare(liveSeamless, s.Version) > 0)
+        {
+            Console.WriteLine("== Avis : Seamless " + liveSeamless + " sur Nexus, pas encore sur GitHub");
+            st = State.Load(); st.Set("language", "fr"); st.Set("nexus_notified_" + Seamless.Id, null); st.Save();
+            win = Show(new MainUi(game), 2);
+            var wait = System.Diagnostics.Stopwatch.StartNew();
+            while (Find<TextBlock>(win, "DlgTitle").Text != "Mise à jour de Seamless Co-op" && wait.Elapsed.TotalSeconds < 45) Pump(0.5);
+            Check(Find<Grid>(win, "Overlay").Visibility == Visibility.Visible && Find<TextBlock>(win, "DlgText").Text.Contains("v" + liveSeamless),
+                  "avis affiché : version Nexus, attendre GitHub ou importer le .zip");
+            Render(Find<FrameworkElement>(win, "Root"), "ui_nexus_notice.png");
+            Click(Find<Button>(win, "DlgCancel"));
+            Pump(0.3);
+            Check(Find<TextBlock>(win, "ModsText").Text.Contains("v" + liveSeamless + " sur Nexus") && State.Load().Get("nexus_notified_" + Seamless.Id) == liveSeamless,
+                  "ligne MODS : « v" + liveSeamless + " sur Nexus », avis montré une seule fois par version");
+            Render(Find<FrameworkElement>(win, "Root"), "ui_nexus_status.png");
+            win.Close();
+        }
+        else Console.WriteLine("  (Seamless déjà à jour sur GitHub : avis Nexus non testé)");
 
         Console.WriteLine(failures == 0 ? "\nTOUS LES TESTS PASSENT" : "\n" + failures + " ÉCHEC(S)");
         return failures;

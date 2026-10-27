@@ -164,6 +164,18 @@ namespace ERSeamless
             { "btn_update_mod", new[] { "Mettre à jour", "Update", "Actualizar" } },
             { "btn_nexus_page", new[] { "Page Nexus", "Nexus page", "Página de Nexus" } },
             { "btn_mod_page", new[] { "Page du mod", "Mod page", "Página del mod" } },
+            { "badge_nexus_newer", new[] { "{0} sur Nexus", "{0} on Nexus", "{0} en Nexus" } },
+            { "nexus_newer_tip", new[] {
+                "Une version plus récente est sortie sur Nexus mais n'est pas encore publiée sur GitHub, où le launcher récupère les mises à jour. Elle s'installera toute seule dès sa publication. Pour l'avoir tout de suite : télécharge-la sur Nexus (compte gratuit), puis « Importer un .zip ».",
+                "A newer version is out on Nexus but isn't published on GitHub yet, where the launcher gets updates. It will install by itself once published. To get it now: download it from Nexus (free account), then « Import a .zip ».",
+                "Hay una versión más reciente en Nexus que aún no está publicada en GitHub, de donde el launcher obtiene las actualizaciones. Se instalará sola en cuanto se publique. Para tenerla ya: descárgala en Nexus (cuenta gratuita) y luego « Importar un .zip »." } },
+            { "nexus_ahead_title", new[] { "Mise à jour de {0}", "{0} update", "Actualización de {0}" } },
+            { "nexus_ahead_text", new[] {
+                "{0} {1} est sortie sur Nexus, mais pas encore sur GitHub, où le launcher récupère les mises à jour (tu as la {2}). En coop, tous les joueurs doivent avoir la même version.\n\n• Attendre : elle s'installera toute seule dès sa publication sur GitHub, en général sous quelques jours.\n• Ou la télécharger sur Nexus (compte gratuit nécessaire), puis Mods → « Importer un .zip ». Tes réglages sont conservés.",
+                "{0} {1} is out on Nexus, but not yet on GitHub, where the launcher gets updates (you have {2}). In co-op, every player must have the same version.\n\n• Wait: it will install by itself once published on GitHub, usually within a few days.\n• Or download it from Nexus (free account required), then Mods → « Import a .zip ». Your settings are kept.",
+                "{0} {1} ya está en Nexus, pero aún no en GitHub, de donde el launcher obtiene las actualizaciones (tienes la {2}). En cooperativo, todos los jugadores deben tener la misma versión.\n\n• Esperar: se instalará sola en cuanto se publique en GitHub, normalmente en unos días.\n• O descargarla en Nexus (se necesita una cuenta gratuita) y luego Mods → « Importar un .zip ». Tus ajustes se conservan." } },
+            { "nexus_ahead_open", new[] { "Ouvrir Nexus", "Open Nexus", "Abrir Nexus" } },
+            { "later", new[] { "Plus tard", "Later", "Más tarde" } },
             { "nexus_manual_tip", new[] { "Télécharge le .zip sur Nexus, puis clique sur « Importer un .zip ».", "Download the .zip from Nexus, then click « Import a .zip ».", "Descarga el .zip en Nexus y pulsa « Importar un .zip »." } },
             { "move_up", new[] { "Charger plus tôt", "Load earlier", "Cargar antes" } },
             { "move_down", new[] { "Charger plus tard", "Load later", "Cargar después" } },

@@ -284,6 +284,51 @@ namespace ERSeamless
         }
     }
 
+    /// <summary>Numéros de version (« v2.0.1 », « 2.0.2 ») : comparaison et lecture dans un nom de fichier.</summary>
+    public static class Versions
+    {
+        static readonly Regex Number = new Regex(@"^\s*v?(\d+(?:\.\d+)*)\s*$", RegexOptions.IgnoreCase);
+
+        static int[] Parse(string v)
+        {
+            var m = Number.Match(v ?? "");
+            if (!m.Success) return null;
+            var parts = new List<int>();
+            foreach (var s in m.Groups[1].Value.Split('.'))
+            {
+                int n;
+                if (!int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out n)) return null;
+                parts.Add(n);
+            }
+            return parts.ToArray();
+        }
+
+        /// <summary>Positif si a est plus récente que b ; null si l'une des deux n'est pas un numéro de version (« Binaries », « 2022-05 »).</summary>
+        public static int? Compare(string a, string b)
+        {
+            var x = Parse(a);
+            var y = Parse(b);
+            if (x == null || y == null) return null;
+            for (int i = 0; i < Math.Max(x.Length, y.Length); i++)
+            {
+                int p = i < x.Length ? x[i] : 0, q = i < y.Length ? y[i] : 0;
+                if (p != q) return p.CompareTo(q);
+            }
+            return 0;
+        }
+
+        /// <summary>Version d'une archive : « Nom-510-2-0-2-1761575432 » (ancien nommage Nexus) ou « Seamless Co-op v2.0.2 ».</summary>
+        public static string FromFileName(string file)
+        {
+            var name = Path.GetFileNameWithoutExtension((file ?? "").TrimEnd('\\')) ?? "";
+            var m = Regex.Match(name, @"-\d+-(\d+(?:-\d+)*)-\d{9,}$");
+            if (m.Success) return "v" + m.Groups[1].Value.Replace('-', '.');
+            m = Regex.Match(name, @"(?:^|[\s_\.\-])v(\d+(?:\.\d+)+)", RegexOptions.IgnoreCase);
+            if (!m.Success) m = Regex.Match(name, @"[\s_\-](\d+(?:\.\d+)+)$");
+            return m.Success ? "v" + m.Groups[1].Value : null;
+        }
+    }
+
     /// <summary>Résultat de l'analyse d'un mod importé à la main (.zip ou dossier).</summary>
     public class ModAnalysis
     {
@@ -454,21 +499,43 @@ namespace ERSeamless
             return id;
         }
 
+        static string Squash(string s)
+        {
+            return Regex.Replace((s ?? "").ToLowerInvariant(), "[^a-z0-9]", "");
+        }
+
         /// <summary>
-        /// Importe un mod téléchargé à la main (.zip ou dossier). Si son nom de fichier Nexus correspond à une entrée du
-        /// catalogue, la disposition du catalogue est utilisée ; sinon le contenu est analysé.
+        /// Entrée du catalogue correspondant à un mod importé : numéro Nexus du nom de fichier (ancien nommage), sinon mêmes DLL
+        /// que celles décrites par le catalogue, sinon nom du fichier (mods Nexus dont le catalogue ne décrit pas les fichiers).
+        /// </summary>
+        public static CatalogMod Recognize(string path, Catalog catalog, ModAnalysis analysis)
+        {
+            if (catalog == null) return null;
+            var cm = catalog.FindNexus(NexusIdFromFileName(path));
+            if (cm != null) return cm;
+            var dlls = new HashSet<string>(analysis.Natives, StringComparer.OrdinalIgnoreCase);
+            cm = catalog.Mods.FirstOrDefault(c => !c.AutoLayout && c.Natives.Length > 0 && dlls.SetEquals(c.Natives));
+            if (cm != null) return cm;
+            var name = Squash(CleanName(path));
+            return catalog.Mods.Where(c => c.AutoLayout && c.Nexus > 0 && Squash(c.Name).Length > 0 && name.StartsWith(Squash(c.Name)))
+                               .OrderByDescending(c => c.Name.Length).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Importe un mod téléchargé à la main (.zip ou dossier). S'il est reconnu comme un mod du catalogue, la disposition et
+        /// les réglages du catalogue sont utilisés ; sinon le contenu est analysé.
         /// </summary>
         public static InstalledMod Import(string path, Catalog catalog, ModStore store, out ModAnalysis analysis)
         {
             bool isDir = Directory.Exists(path);
             if (!isDir && !path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) throw new UserError(L.T("err_archive_format"));
-            var cm = catalog == null ? null : catalog.FindNexus(NexusIdFromFileName(path));
             string dir;
             if (isDir) { dir = Files.TempDir(); Files.CopyDir(path, dir); }
             else dir = Files.ExtractToTemp(path);
             try
             {
                 analysis = Analyze(dir);
+                var cm = Recognize(path, catalog, analysis);
                 InstalledMod m;
                 if (cm != null)
                 {
@@ -487,13 +554,15 @@ namespace ERSeamless
                         if (m.SettingsFile == null) m.SettingsFile = analysis.SettingsFile;
                     }
                     m.Source = "nexus";
-                    m.Version = cm.Version ?? "";
+                    m.Tag = null;
+                    m.Version = Versions.FromFileName(path) ?? cm.Version ?? "";
+                    if (cm.Special == "seamless") Seamless.AfterInstall(m);
                 }
                 else
                 {
                     if (analysis.Empty) throw new UserError(L.T("err_import_empty"));
                     var name = CleanName(path);
-                    m = new InstalledMod { Id = Slug(name, store), Name = name, Source = "manual" };
+                    m = new InstalledMod { Id = Slug(name, store), Name = name, Source = "manual", Version = Versions.FromFileName(path) ?? "" };
                     Place(dir, m, null);
                     m.Natives = analysis.Natives;
                     m.Packages = analysis.Packages;
@@ -578,24 +647,49 @@ namespace ERSeamless
             return warnings;
         }
 
-        /// <summary>Mods installés dont une nouvelle version existe sur GitHub.</summary>
+        /// <summary>
+        /// Mods installés dont une nouvelle version existe sur GitHub. Un mod importé depuis Nexus reste suivi : il est mis à jour
+        /// dès que GitHub publie une version plus récente que la sienne, jamais vers une plus ancienne.
+        /// </summary>
         public static async Task<List<KeyValuePair<InstalledMod, CatalogMod>>> FindUpdates(Catalog catalog, ModStore store)
         {
             var result = new List<KeyValuePair<InstalledMod, CatalogMod>>();
             foreach (var m in store.Mods.ToList())
             {
                 var cm = catalog.Find(m.Id);
-                if (cm == null || !cm.Source.IsGitHub || m.Source != "github") continue;
+                if (cm == null || !cm.Source.IsGitHub || (m.Source != "github" && m.Source != "nexus")) continue;
                 try
                 {
                     var rel = await GitHub.GetRelease(cm.Source.Repo, cm.Source.Tag);
                     var asset = rel.Find(cm.Source.Asset);
                     if (asset == null) continue;
                     var sha = cm.Source.Sha256 ?? asset.Sha256;
-                    if (rel.Tag != m.Tag || (sha != null && m.AssetSha != null && !sha.Equals(m.AssetSha, StringComparison.OrdinalIgnoreCase)))
+                    var order = Versions.Compare(rel.Tag, m.Version);
+                    bool newer = m.Source == "github"
+                        ? rel.Tag != m.Tag || (sha != null && m.AssetSha != null && !sha.Equals(m.AssetSha, StringComparison.OrdinalIgnoreCase))
+                        : order.HasValue && order.Value > 0;
+                    if (newer && !(order.HasValue && order.Value < 0))
                         result.Add(new KeyValuePair<InstalledMod, CatalogMod>(m, cm));
                 }
                 catch (Exception ex) { Log.Write("update check " + m.Id + ": " + ex.Message); }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Mods tenus à jour depuis GitHub pour lesquels Nexus annonce déjà une version plus récente : le dépôt GitHub de
+        /// Seamless n'est qu'un miroir de Nexus, publié parfois avec quelques jours de retard.
+        /// </summary>
+        public static List<KeyValuePair<InstalledMod, string>> NexusAhead(Catalog catalog, ModStore store, IDictionary<int, string> nexusVersions)
+        {
+            var result = new List<KeyValuePair<InstalledMod, string>>();
+            foreach (var m in store.Mods)
+            {
+                var cm = catalog.Find(m.Id);
+                string v;
+                if (cm == null || cm.Nexus <= 0 || !cm.Source.IsGitHub || cm.Source.Tag != null || !nexusVersions.TryGetValue(cm.Nexus, out v)) continue;
+                var order = Versions.Compare(v, m.Version);
+                if (order.HasValue && order.Value > 0) result.Add(new KeyValuePair<InstalledMod, string>(m, v));
             }
             return result;
         }
@@ -883,12 +977,9 @@ namespace ERSeamless
             return Task.Run(() => SearchBlocking(text, count)); // requête bloquante, hors du thread de l'interface
         }
 
-        static List<NexusMod> SearchBlocking(string text, int count)
+        /// <summary>Requête GraphQL bloquante ; renvoie la partie « data » de la réponse.</summary>
+        static Dictionary<string, object> Query(string query)
         {
-            var filter = "gameDomainName: [{ value: \"eldenring\" }], adultContent: [{ value: false }]";
-            if (!string.IsNullOrWhiteSpace(text)) filter += ", name: [{ value: " + Json.Write(text.Trim()) + ", op: WILDCARD }]";
-            var query = "{ mods(filter: { " + filter + " }, sort: [{ endorsements: { direction: DESC } }], count: " + count +
-                        ") { nodes { modId name summary author version updatedAt endorsements pictureUrl } } }";
             string resp;
             using (var wc = new WebClient { Encoding = Encoding.UTF8 })
             {
@@ -896,7 +987,32 @@ namespace ERSeamless
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";
                 resp = wc.UploadString(Endpoint, "POST", Json.Write(new Dictionary<string, object> { { "query", query } }));
             }
-            var mods = Json.Obj(Json.Obj(Json.ParseObject(resp), "data"), "mods");
+            return Json.Obj(Json.ParseObject(resp), "data");
+        }
+
+        /// <summary>Version actuelle de chaque mod sur Nexus (numéro Nexus → version), sans compte.</summary>
+        public static Task<Dictionary<int, string>> LatestVersions(IEnumerable<int> modIds)
+        {
+            var ids = modIds.Where(i => i > 0).Distinct().ToList();
+            return Task.Run(() =>
+            {
+                var result = new Dictionary<int, string>();
+                if (ids.Count == 0) return result;
+                var list = string.Join(", ", ids.Select(i => "{ gameDomain: \"eldenring\", modId: " + i.ToString(CultureInfo.InvariantCulture) + " }"));
+                var data = Query("{ legacyModsByDomain(ids: [" + list + "]) { nodes { modId version } } }");
+                foreach (var n in Json.Objs(Json.Obj(data, "legacyModsByDomain"), "nodes"))
+                    result[Json.Int(n, "modId", 0)] = Json.Str(n, "version", "");
+                return result;
+            });
+        }
+
+        static List<NexusMod> SearchBlocking(string text, int count)
+        {
+            var filter = "gameDomainName: [{ value: \"eldenring\" }], adultContent: [{ value: false }]";
+            if (!string.IsNullOrWhiteSpace(text)) filter += ", name: [{ value: " + Json.Write(text.Trim()) + ", op: WILDCARD }]";
+            var query = "{ mods(filter: { " + filter + " }, sort: [{ endorsements: { direction: DESC } }], count: " + count +
+                        ") { nodes { modId name summary author version updatedAt endorsements pictureUrl } } }";
+            var mods = Json.Obj(Query(query), "mods");
             return Json.Objs(mods, "nodes").Select(n => new NexusMod
             {
                 Id = Json.Int(n, "modId", 0),

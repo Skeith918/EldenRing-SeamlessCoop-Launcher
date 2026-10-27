@@ -27,6 +27,8 @@ L'exe n'est pas signé, donc Windows SmartScreen peut afficher « Windows a prot
   - les incompatibilités vérifiées et déclarées dans le catalogue ;
   - deux mods qui remplacent les mêmes fichiers du jeu, détectés automatiquement (deux `regulation.bin`, deux textures de Malenia…).
 - **Mises à jour automatiques** des mods hébergés sur GitHub et de me3, avec vérification SHA-256 et conservation de tes réglages.
+  - Le dépôt GitHub de Seamless n'est qu'un miroir de Nexus, parfois publié avec quelques jours de retard. Quand une version sort d'abord sur Nexus, le launcher le signale : on peut alors attendre, ou importer le `.zip` de Nexus.
+  - Un mod importé depuis Nexus reste suivi : il ne sera jamais remplacé par une version GitHub plus ancienne.
 - **Réglages de chaque mod** depuis le launcher : ceux de Seamless sur la page Jouer, ceux des autres mods dans leur fenêtre « Réglages ». Ils sont décrits dans le catalogue, ou déduits automatiquement du `.ini` du mod.
 - **Import intelligent** : il repère les DLL, les dossiers de fichiers du jeu (`regulation.bin`, `chr/`, `parts/`…) et la config des mods « Elden Mod Loader ». Il ignore le vieux chargeur `dinput8.dll`, puisque me3 le remplace.
 - **Sauvegardes** :

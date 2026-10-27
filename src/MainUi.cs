@@ -56,6 +56,7 @@ namespace ERSeamless
         GitHub.Release me3Latest;
         List<KeyValuePair<InstalledMod, CatalogMod>> pendingUpdates = new List<KeyValuePair<InstalledMod, CatalogMod>>();
         Dictionary<string, List<ModConflict>> conflicts = new Dictionary<string, List<ModConflict>>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<int, string> nexusVersions = new Dictionary<int, string>();
         bool busy, discoverLoaded, suppressToggle;
         TaskCompletionSource<bool> dialog;
         Form seamlessForm, sheetForm;
@@ -328,8 +329,40 @@ namespace ERSeamless
             try { me3Latest = await Me3.Latest(); }
             catch (Exception ex) { Log.Write("me3 check: " + ex.Message); }
             pendingUpdates = await Installer.FindUpdates(catalog, store);
-            if (!busy) RefreshStatus();
+            try { nexusVersions = await Nexus.LatestVersions(catalog.Mods.Select(c => c.Nexus)); }
+            catch (Exception ex) { Log.Write("nexus versions: " + ex.Message); }
+            if (!busy) { RebuildModLists(); RefreshStatus(); }
             if (state.GetBool("auto_update", true) && UpdateCount() > 0 && !Game.IsRunning()) await ApplyUpdates();
+            await NotifyNexusAhead();
+        }
+
+        List<KeyValuePair<InstalledMod, string>> NexusAhead()
+        {
+            return Installer.NexusAhead(catalog, store, nexusVersions);
+        }
+
+        string NexusNewer(InstalledMod m)
+        {
+            return NexusAhead().Where(a => a.Key == m).Select(a => a.Value).FirstOrDefault();
+        }
+
+        static string Ver(string v)
+        {
+            return string.IsNullOrEmpty(v) || !char.IsDigit(v[0]) ? v : "v" + v;
+        }
+
+        /// <summary>Une fois par version : une mise à jour est sortie sur Nexus mais pas encore sur GitHub, d'où le launcher l'installe.</summary>
+        async Task NotifyNexusAhead()
+        {
+            foreach (var a in NexusAhead())
+            {
+                var key = "nexus_notified_" + a.Key.Id;
+                if (state.Get(key) == a.Value || pendingUpdates.Any(u => u.Key == a.Key)) continue;
+                state.Set(key, a.Value);
+                state.Save();
+                if (await Ask(L.F("nexus_ahead_title", a.Key.Name), L.F("nexus_ahead_text", a.Key.Name, Ver(a.Value), Ver(a.Key.Version)), L.T("nexus_ahead_open"), L.T("later")))
+                    OpenUrl(catalog.Find(a.Key.Id).NexusPage);
+            }
         }
 
         bool Me3Outdated()
@@ -855,6 +888,15 @@ namespace ERSeamless
             return t == k ? L.T("category_other") : t;
         }
 
+        /// <summary>Version plus récente publiée sur Nexus mais pas encore sur GitHub.</summary>
+        Border NexusBadge(string version)
+        {
+            if (version == null) return null;
+            var b = Badge(L.F("badge_nexus_newer", Ver(version)), "warn");
+            b.ToolTip = new TextBlock { Text = L.T("nexus_newer_tip"), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
+            return b;
+        }
+
         Border CompatBadge(CatalogMod cm, InstalledMod m)
         {
             if (cm != null && cm.Supports(gameVersion)) return Badge(L.F("badge_compatible", gameVersion), "ok");
@@ -944,7 +986,8 @@ namespace ERSeamless
             Border incompatible = null;
             if (m == null && active.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(active.Select(c => c.Id))), "bad", tip);
             else if (declared.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(declared.Select(c => c.Id))), "muted", tip);
-            info.Children.Add(Head(cm.Name, Badge(CategoryName(cm.Category), "muted"), CompatBadge(cm, m), gameplay, incompatible));
+            var newer = m == null ? null : NexusNewer(m);
+            info.Children.Add(Head(cm.Name, Badge(CategoryName(cm.Category), "muted"), CompatBadge(cm, m), gameplay, incompatible, NexusBadge(newer)));
             var sub = L.F("by_author", cm.Author) + (cm.Version != null ? " · " + cm.Version : "") + " · " + L.T(cm.Source.IsGitHub ? "source_github" : "source_nexus");
             info.Children.Add(new TextBlock { Text = sub, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 0, 0) });
             var desc = Json.Loc(cm.Description);
@@ -965,7 +1008,7 @@ namespace ERSeamless
                 b.Click += async (s, e) => await InstallMod(cm);
                 actions.Children.Add(b);
             }
-            if (cm.NexusPage != null && (m == null || !cm.Source.IsGitHub))
+            if (cm.NexusPage != null && (m == null || !cm.Source.IsGitHub || newer != null))
             {
                 var nb = ActionButton(L.T(cm.Nexus > 0 ? "btn_nexus_page" : "btn_mod_page"), new Thickness(8, 0, 0, 0), () => OpenUrl(cm.NexusPage));
                 if (!cm.Source.IsGitHub && m == null) nb.ToolTip = L.T("nexus_manual_tip");
@@ -1015,7 +1058,8 @@ namespace ERSeamless
             Border incompatible = null;
             if (blockers.Count > 0) incompatible = ConflictBadge(L.F("badge_blocked_by", ConflictNames(blockers.Select(c => c.With))), "bad", ConflictDetails(blockers));
             else if (partners.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(partners.Select(c => c.With))), "muted", ConflictDetails(partners));
-            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted"), incompatible));
+            var newer = NexusNewer(m);
+            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted"), incompatible, NexusBadge(newer)));
             var parts = new List<string>();
             if (m.Natives.Count > 0) parts.Add(L.F("n_dlls", m.Natives.Count));
             if (m.Packages.Count > 0) parts.Add(L.F("n_packages", m.Packages.Count));
@@ -1028,6 +1072,12 @@ namespace ERSeamless
             g.Children.Add(info);
 
             var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (newer != null && cm != null)
+            {
+                var nb = ActionButton(L.T("btn_nexus_page"), new Thickness(0, 0, 8, 0), () => OpenUrl(cm.NexusPage));
+                nb.ToolTip = L.T("nexus_newer_tip");
+                actions.Children.Add(nb);
+            }
             if (m.Id == Seamless.Id || SchemaFor(m) != null)
                 actions.Children.Add(ActionButton(L.T("btn_settings"), new Thickness(0, 0, 8, 0), () => OpenSheet(m)));
             if (!Compatible(m) && gameVersion != null)
@@ -1137,6 +1187,11 @@ namespace ERSeamless
                 m = await Task.Run(() => Installer.Import(path, catalog, store, out an));
                 Status(L.F("installed_mod", m.Name), double.NaN);
             });
+            if (ok)
+            {
+                pendingUpdates.RemoveAll(u => u.Key.Id == m.Id); // la version importée peut être plus récente que GitHub
+                if (m.Id == Seamless.Id) AfterSeamlessInstalled();
+            }
             RebuildModLists();
             RefreshStatus();
             if (!ok) return;
@@ -1226,17 +1281,24 @@ namespace ERSeamless
             var seamless = store.Get(Seamless.Id);
             var enabled = store.Mods.Where(m => m.Enabled).ToList();
             var unverified = enabled.Where(m => !Compatible(m)).Select(m => m.Name).ToList();
+            var ahead = NexusAhead();
             if (!gameOk) Row(ModsDot, ModsText, "Off", "—");
             else if (store.Mods.Count == 0) Row(ModsDot, ModsText, "Bad", L.T("mods_none"));
             else
             {
-                var text = seamless != null && seamless.Enabled ? "Seamless Co-op " + seamless.Version : L.T("solo_mode");
+                var newer = seamless == null ? null : NexusNewer(seamless);
+                var text = seamless != null && seamless.Enabled
+                    ? "Seamless Co-op " + seamless.Version + (newer != null ? " · " + L.F("badge_nexus_newer", Ver(newer)) : "")
+                    : L.T("solo_mode");
                 int others = enabled.Count(m => m.Id != Seamless.Id);
                 if (others > 0) text += L.F("plus_mods", others);
                 if (pendingUpdates.Count > 0) text += L.F("n_updates", pendingUpdates.Count);
-                Row(ModsDot, ModsText, unverified.Count > 0 || pendingUpdates.Count > 0 ? "Gold" : "Ok", text);
+                Row(ModsDot, ModsText, unverified.Count > 0 || pendingUpdates.Count > 0 || ahead.Count > 0 ? "Gold" : "Ok", text);
             }
-            ModsText.ToolTip = unverified.Count > 0 ? L.F("unverified_tip", gameVersion ?? "?", string.Join(", ", unverified)) : null;
+            var tips = new List<string>();
+            if (unverified.Count > 0) tips.Add(L.F("unverified_tip", gameVersion ?? "?", string.Join(", ", unverified)));
+            if (ahead.Count > 0) tips.Add(L.T("nexus_newer_tip"));
+            ModsText.ToolTip = tips.Count > 0 ? string.Join("\n\n", tips) : null;
 
             if (Engine == "classic")
                 Row(EngineDot, EngineText, seamless != null ? "Ok" : "Off", L.T("engine_classic_status"));
