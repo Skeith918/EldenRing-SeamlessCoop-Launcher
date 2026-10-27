@@ -108,10 +108,9 @@
       },
       "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^UnlockTheFps\\.zip$",
                   "sha256": "116a523d858ab76ed38ca8a918c1f1e393d646f4d632ea2f692a614524b86a51" },
-      "games": [],
+      "games": ["2.7.2"],
       "natives": ["mods/UnlockTheFps.dll"],
       "deploy": [{ "from": "mods/UnlockTheFps", "to": "mods/UnlockTheFps" }],
-      "conflicts": [],
       "settings": {
         "file": "mods/UnlockTheFps/config.ini",
         "tabs": [
@@ -141,7 +140,7 @@
       },
       "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^AdjustTheFov\\.zip$",
                   "sha256": "339a27e94780c1550380d0fbc81026265da0539f95cfd004b012ec5c99c8323b" },
-      "games": [],
+      "games": ["2.7.2"],
       "natives": ["mods/AdjustTheFov.dll"],
       "deploy": [{ "from": "mods/AdjustTheFov", "to": "mods/AdjustTheFov" }],
       "settings": {
@@ -173,7 +172,7 @@
       },
       "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^RemoveChromaticAberration\\.zip$",
                   "sha256": "2b9725dbc9c0825bb7f366bc8d01e659d62db4bc12d89ceb4d55287a3c23d13f" },
-      "games": [],
+      "games": ["2.7.2"],
       "natives": ["mods/RemoveChromaticAberration.dll"]
     },
     {
@@ -190,8 +189,164 @@
       },
       "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^RemoveVignette\\.zip$",
                   "sha256": "cdd9a3faf127d7f6fdf57e0e3772d1e849603b2c20ad32a41b8883fb6e3600d6" },
-      "games": [],
+      "games": ["2.7.2"],
       "natives": ["mods/RemoveVignette.dll"]
+    },
+    {
+      "id": "increase-animation-distance",
+      "name": "Increase Animation Distance",
+      "author": "techiew",
+      "category": "graphics",
+      "version": "2022-05",
+      "nexus": 349,
+      "description": {
+        "fr": "Les personnages éloignés (ou au bord de l'écran en ultra-large) ne sont plus animés au ralenti.",
+        "en": "Distant characters (or those at the screen edges in ultrawide) are no longer animated at a low frame rate.",
+        "es": "Los personajes lejanos (o en los bordes de la pantalla en ultrapanorámico) ya no se animan a pocos FPS."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^IncreaseAnimationDistance\\.zip$",
+                  "sha256": "4a120852e5eb71e42abd2d7180a7fbf0a4eb8fbcda797d4cbba54c865b1dc4af" },
+      "games": ["2.7.2"],
+      "natives": ["mods/IncreaseAnimationDistance.dll"]
+    },
+    {
+      "id": "remove-black-bars",
+      "name": "Remove Black Bars",
+      "author": "techiew",
+      "category": "graphics",
+      "version": "2022-06",
+      "nexus": 175,
+      "description": {
+        "fr": "Supprime les bandes noires en résolution ultra-large (21:9, 32:9). Utile uniquement sur écran ultra-large.",
+        "en": "Removes the black bars at ultrawide resolutions (21:9, 32:9). Only useful on an ultrawide screen.",
+        "es": "Elimina las franjas negras en resoluciones ultrapanorámicas (21:9, 32:9). Solo es útil en pantallas ultrapanorámicas."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^RemoveBlackBars\\.zip$",
+                  "sha256": "905f1ebc76a411d89f9276677000a10de200951209d0eacad812c4aefc3c13e0" },
+      "games": ["2.7.2"],
+      "natives": ["mods/UltrawideFix.dll"]
+    },
+    {
+      "id": "disable-rune-loss",
+      "name": "Disable Rune Loss",
+      "author": "techiew",
+      "category": "qol",
+      "version": "2022-12",
+      "nexus": 376,
+      "gameplay": true,
+      "description": {
+        "fr": "Tu ne perds plus tes runes en mourant.",
+        "en": "You no longer lose your runes when you die.",
+        "es": "Ya no pierdes tus runas al morir."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^DisableRuneLoss\\.zip$",
+                  "sha256": "6d69b51cde189b8ebedcd858aa5b25bb394c49e8e1df79c207a28d46ce0ccf6b" },
+      "games": ["2.7.2"],
+      "natives": ["mods/DisableRuneLoss.dll"]
+    },
+    {
+      "id": "fix-the-camera",
+      "name": "Fix the Camera",
+      "author": "techiew",
+      "category": "qol",
+      "version": "2022-05",
+      "nexus": 118,
+      "description": {
+        "fr": "La caméra ne se recentre plus toute seule quand tu te déplaces, et ne se remet plus dans ton dos quand tu verrouilles sans cible.",
+        "en": "The camera no longer recenters on its own while you move, and no longer snaps behind you when you lock on with no target.",
+        "es": "La cámara deja de recentrarse sola mientras te mueves y ya no se coloca detrás de ti al fijar sin objetivo."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^FixTheCamera\\.zip$",
+                  "sha256": "749174278e9147fb099c37592f98811c9e737645c913d12fe64b9b94bd03250d" },
+      "games": ["2.7.2"],
+      "natives": ["mods/CameraFix.dll"],
+      "deploy": [{ "from": "mods/CameraFix", "to": "mods/CameraFix" }],
+      "conflicts": [
+        { "id": "free-lock-on-camera",
+          "reason": {
+            "fr": "Free Lock-On Camera intègre déjà le correctif « pas de réinitialisation au verrouillage » de Fix the Camera : les deux modifient la même instruction du jeu (eldenring.exe+3B62CD), et son auteur précise que ce correctif échoue quand Fix the Camera est présent.",
+            "en": "Free Lock-On Camera already includes Fix the Camera's « no reset on lock-on » fix: both patch the same game instruction (eldenring.exe+3B62CD), and its author notes that this fix fails when Fix the Camera is present.",
+            "es": "Free Lock-On Camera ya incluye la corrección « sin reinicio al fijar » de Fix the Camera: ambos modifican la misma instrucción del juego (eldenring.exe+3B62CD), y su autor indica que esa corrección falla si Fix the Camera está presente."
+          } }
+      ],
+      "settings": {
+        "file": "mods/CameraFix/config.ini",
+        "tabs": [
+          {
+            "title": { "fr": "CAMÉRA", "en": "CAMERA", "es": "CÁMARA" },
+            "items": [
+              { "key": "disable_camera_auto_rotate", "section": "fix_the_camera", "type": "toggle", "default": "1",
+                "label": { "fr": "Pas de recentrage automatique", "en": "No automatic recentering", "es": "Sin recentrado automático" },
+                "hint": { "fr": "La caméra ne pivote plus seule derrière ton personnage quand tu te déplaces", "en": "The camera no longer swings behind your character on its own while you move", "es": "La cámara deja de girar sola detrás de tu personaje mientras te mueves" } },
+              { "key": "disable_camera_reset", "section": "fix_the_camera", "type": "toggle", "default": "1",
+                "label": { "fr": "Pas de réinitialisation au verrouillage", "en": "No reset on lock-on", "es": "Sin reinicio al fijar" },
+                "hint": { "fr": "Verrouiller sans cible à portée ne remet plus la caméra dans ton dos", "en": "Locking on with no target in range no longer snaps the camera behind you", "es": "Fijar sin objetivo al alcance ya no coloca la cámara detrás de ti" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "free-lock-on-camera",
+      "name": "Free Lock-On Camera",
+      "author": "SchuhBaum",
+      "category": "qol",
+      "homepage": "https://github.com/SchuhBaum/FreeLockOnCamera",
+      "description": {
+        "fr": "La caméra reste libre pendant le verrouillage : tu peux la tourner pour garder un grand boss ou un groupe en vue. Revoit aussi le choix des cibles.",
+        "en": "The camera stays free while locked on: rotate it to keep large bosses or groups in view. Also reworks how targets are picked.",
+        "es": "La cámara sigue libre al fijar un objetivo: gírala para no perder de vista a jefes grandes o grupos. También mejora la selección de objetivos."
+      },
+      "source": { "type": "github", "repo": "SchuhBaum/FreeLockOnCamera", "asset": "^FreeLockOnCamera\\.zip$" },
+      "games": ["2.7.2"],
+      "natives": ["mods/FreeLockOnCamera.dll"],
+      "settings": {
+        "file": "mods/FreeLockOnCamera/config.ini",
+        "tabs": [
+          {
+            "title": { "fr": "VERROUILLAGE", "en": "LOCK-ON", "es": "FIJADO" },
+            "items": [
+              { "key": "is_free_lock_on_camera_enabled", "section": "freelockoncamera", "type": "toggle", "default": "true",
+                "label": { "fr": "Caméra libre pendant le verrouillage", "en": "Free camera while locked on", "es": "Cámara libre al fijar" },
+                "hint": { "fr": "Tu gardes le contrôle de la caméra sans lâcher la cible", "en": "You keep control of the camera without losing the target", "es": "Mantienes el control de la cámara sin soltar el objetivo" } },
+              { "key": "is_toggle", "section": "freelockoncamera", "type": "toggle", "default": "true",
+                "label": { "fr": "Verrouillage permanent", "en": "Toggle lock-on", "es": "Fijado permanente" },
+                "hint": { "fr": "Une pression l'active et il reprend une cible tout seul ; une autre le coupe", "en": "One press turns it on and it picks new targets by itself; another turns it off", "es": "Una pulsación lo activa y busca objetivos solo; otra lo desactiva" } },
+              { "key": "target_switching_mode", "section": "freelockoncamera", "type": "choice", "default": "modded_switch",
+                "values": ["vanilla_switch", "modded_keep", "modded_switch"],
+                "label": { "fr": "Changement de cible", "en": "Target switching", "es": "Cambio de objetivo" },
+                "choices": [
+                  { "fr": "D'origine", "en": "Vanilla", "es": "Original" },
+                  { "fr": "Garder la cible", "en": "Keep target", "es": "Mantener" },
+                  { "fr": "Là où je vise", "en": "Where I aim", "es": "Donde apunto" }
+                ] },
+              { "key": "is_only_using_camera_yaw", "section": "freelockoncamera", "type": "toggle", "default": "true",
+                "label": { "fr": "Ignorer la hauteur de la caméra", "en": "Ignore camera pitch", "es": "Ignorar la inclinación de la cámara" },
+                "hint": { "fr": "Lever ou baisser la caméra ne change pas de cible", "en": "Moving the camera up or down doesn't switch targets", "es": "Subir o bajar la cámara no cambia de objetivo" } },
+              { "key": "is_health_bar_hidden", "section": "freelockoncamera", "type": "toggle", "default": "true",
+                "label": { "fr": "Masquer la barre de vie de la cible", "en": "Hide the target's health bar", "es": "Ocultar la barra de vida del objetivo" } },
+              { "key": "is_lock_on_camera_zoom_enabled", "section": "freelockoncamera", "type": "toggle", "default": "true",
+                "label": { "fr": "Recul de la caméra sur les grands ennemis", "en": "Zoom out on large enemies", "es": "Alejar la cámara con enemigos grandes" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "map-for-goblins-expanded",
+      "name": "Map for Goblins Expanded",
+      "author": "faber88",
+      "category": "qol",
+      "version": "1.4.2",
+      "nexus": 7156,
+      "gameplay": true,
+      "description": {
+        "fr": "Carte enrichie : objets, boss, PNJ hostiles et lieux, avec les faiblesses des ennemis et l'effet des talismans. Se règle à un site de grâce. Contient des spoilers ; remplace regulation.bin.",
+        "en": "Enriched world map: items, bosses, hostile NPCs and places, with enemy weaknesses and talisman effects. Configured at a Site of Grace. Contains spoilers; replaces regulation.bin.",
+        "es": "Mapa enriquecido: objetos, jefes, PNJ hostiles y lugares, con las debilidades de los enemigos y el efecto de los talismanes. Se configura en un lugar de gracia. Contiene spoilers; reemplaza regulation.bin."
+      },
+      "source": { "type": "nexus" },
+      "games": ["2.7.2"]
     }
   ]
 }

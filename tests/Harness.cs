@@ -88,7 +88,7 @@ static class Harness
         Check(missing == 0, L.Keys.Count() + " textes présents dans les 3 langues");
         Check(mismatch == 0, "mêmes paramètres {0}/{1} dans chaque langue");
         var notKeys = new HashSet<string> { "game_dir", "language", "backup_on_launch", "save_import_done", "game_version", "legacy_declined", "import_message",
-                                            "muted", "warn", "bad", "me3", "classic", "github", "nexus", "manual", "seamless" };
+                                            "muted", "warn", "bad", "me3", "classic", "github", "nexus", "manual", "seamless", "files", "deploy", "declared" };
         var used = new HashSet<string>();
         foreach (var file in Directory.GetFiles(src, "*.cs").Where(f => !f.EndsWith("Lang.cs")))
             foreach (var line in File.ReadAllLines(file).Where(l => l.Contains("L.T(") || l.Contains("L.F(")))
@@ -100,11 +100,22 @@ static class Harness
         Console.WriteLine("== Catalogue");
         var cat = Catalog.Embedded();
         var seam = cat.Find(Seamless.Id);
-        Check(cat.Mods.Count == 5 && seam != null && seam.Core, "catalogue embarqué : 5 mods, Seamless en tête");
+        Check(cat.Mods.Count == 11 && seam != null && seam.Core && cat.Mods[0] == seam, "catalogue embarqué : 11 mods, Seamless en tête");
         Check(seam.Settings != null && seam.Settings.Tabs.Count == 3 && seam.Settings.Items.Count() == 16, "réglages Seamless : 3 onglets, 16 clés");
         Check(CatalogMod.VersionMatch("2.7.*", "2.7.2") && !CatalogMod.VersionMatch("2.7.*", "2.8.0") && CatalogMod.VersionMatch("*", "1.0.0")
               && CatalogMod.VersionMatch("2.7.2", "2.7.2") && !CatalogMod.VersionMatch("2.7", "2.7.2"), "comparaison de versions");
-        Check(seam.Supports(gv) && !cat.Find("unlock-the-fps").Supports(gv), "Seamless compatible " + gv + ", mods Techiew non vérifiés");
+        Check(cat.Mods.All(c => c.Supports(gv)), "tous les mods du catalogue vérifiés pour la version " + gv);
+        var fix = cat.Find("fix-the-camera");
+        var flc = cat.Find("free-lock-on-camera");
+        var reason = Json.Loc(Conflicts.Declared(cat, flc.Id, fix.Id).Reason);
+        Check(Conflicts.DeclaredFor(cat, fix).Any(c => c.Id == flc.Id) && Conflicts.DeclaredFor(cat, flc).Any(c => c.Id == fix.Id) && reason.Contains("3B62CD"),
+              "paire de test (Fix the Camera / Free Lock-On Camera) incompatible dans les deux sens, avec la preuve");
+        Check(cat.Mods.All(a => a.Conflicts.All(c => cat.Find(c.Id) != null))
+              && cat.Mods.Where(a => a != fix && a != flc).All(a => cat.Mods.All(b => a == b || Conflicts.Declared(cat, a.Id, b.Id) == null)),
+              "tous les autres mods du catalogue sont compatibles entre eux");
+        Check(cat.Mods.Where(c => c.Source.IsGitHub && c.Source.Tag != null).All(c => c.Source.Sha256 != null), "versions figées : empreinte SHA-256 épinglée");
+        var flcMode = flc.Settings.Items.First(i => i.Key == "target_switching_mode");
+        Check(flcMode.Type == "choice" && flcMode.Values.Length == 3 && cat.Find("map-for-goblins-expanded").AutoLayout, "choix enregistré par mot, disposition Nexus analysée à l'import");
         var newer = Catalog.Parse("{\"schema\":1,\"updated\":\"2099-01-01\",\"mods\":[]}");
         Check(Catalog.Newest(cat, newer) == newer && Catalog.Newest(cat, Catalog.Parse("{\"schema\":1,\"updated\":\"2000-01-01\",\"mods\":[]}")) == cat, "le catalogue le plus récent gagne");
         Check(Catalog.Parse("{\"schema\":99,\"mods\":[]}") == null, "schéma inconnu ignoré");
@@ -196,13 +207,49 @@ static class Harness
         Check(store.Get(eml.Id) == null && !Directory.Exists(eml.Dir) && !File.Exists(Path.Combine(game, "mods", "Foo", "config.ini")), "mod et fichiers posés dans le jeu supprimés");
         Check(ModStore.Load().Mods.Select(m => m.Id).SequenceEqual(store.Mods.Select(m => m.Id)), "mods.json relu à l'identique");
 
+        Console.WriteLine("== Incompatibilités");
+        var mFix = Installer.InstallCatalogMod(fix, store, null).Result;
+        var mFlc = Installer.InstallCatalogMod(flc, store, null).Result;
+        Check(File.Exists(Path.Combine(mFix.Dir, "mods", "CameraFix.dll")) && File.Exists(Path.Combine(mFlc.Dir, "mods", "FreeLockOnCamera", "config.ini")),
+              "Fix the Camera et Free Lock-On Camera " + mFlc.Tag + " installés depuis GitHub");
+        var map = Conflicts.Compute(store, cat);
+        Check(map[flc.Id].Any(c => c.With == fix.Id && c.Kind == "declared") && map[fix.Id].Any(c => c.With == flc.Id), "incompatibilité détectée entre les deux mods installés");
+        var off = Conflicts.Resolve(store, cat);
+        Check(off.Count == 1 && off[0].Key == mFlc && !mFlc.Enabled && mFix.Enabled, "activés ensemble : le dernier dans l'ordre de chargement est désactivé");
+        Check(Conflicts.Blockers(map, store, mFlc).Select(c => c.With).SequenceEqual(new[] { fix.Id }), "Free Lock-On Camera bloqué tant que Fix the Camera est activé");
+        mFix.Enabled = false;
+        Check(Conflicts.Blockers(map, store, mFlc).Count == 0, "Fix the Camera désactivé : Free Lock-On Camera redevient activable");
+        mFlc.Enabled = true;
+        Check(Conflicts.Blockers(map, store, mFix).Count == 1 && Conflicts.Resolve(store, cat).Count == 0, "…et c'est alors Fix the Camera qui est bloqué");
+        mFlc.Enabled = false; mFix.Enabled = true; store.Save();
+        Check(!File.ReadAllText(Me3.WriteProfile(store, "test")).Contains("FreeLockOnCamera.dll"), "profil me3 : jamais les deux mods à la fois");
+
+        var alt = Installer.Import(Zip("Malenia Alt.zip", "Malenia Alt/chr/c2120.texbnd.dcx=y", "Malenia Alt/readme.txt=autre"), cat, store, out an);
+        var copy = Installer.Import(Zip("Malenia Copy.zip", "chr/c2120.texbnd.dcx=x", "readme.txt=encore autre"), cat, store, out an);
+        map = Conflicts.Compute(store, cat);
+        var tc = map[alt.Id].FirstOrDefault(c => c.With == tex.Id);
+        Check(tc != null && tc.Kind == "files" && tc.Files.SequenceEqual(new[] { "chr/c2120.texbnd.dcx" }), "deux textures de Malenia différentes : incompatibles (même fichier du jeu)");
+        Check(!map[copy.Id].Any(c => c.With == tex.Id), "même fichier au contenu identique, readme différent : compatibles");
+        off = Conflicts.Resolve(store, cat);
+        Check(off.Count == 1 && off[0].Key == alt && copy.Enabled && tex.Enabled, "la texture concurrente est désactivée, la copie identique reste active");
+        var bar = Installer.Import(Zip("Bar.zip", "mods/Bar.dll=a", "mods/Bar/config.ini=[bar]\nx = 1"), cat, store, out an);
+        var fork = Installer.Import(Zip("Bar Fork.zip", "mods/Bar.dll=b", "mods/Bar/config.ini=[bar]\nx = 2"), cat, store, out an);
+        Check(Conflicts.Compute(store, cat)[fork.Id].Any(c => c.With == bar.Id && c.Kind == "deploy"), "même fichier copié dans le jeu (mods/Bar/config.ini) : incompatibles");
+        var mfg = Installer.Import(Zip("Map for Goblins Expanded v1.4.2-7156-1-4-2-1761327935.zip", "regulation.bin=z", "full_version_to_customize__regulation.bin=zz",
+                                       "menu/02_120_worldmap.gfx=m", "script/talk/m00_00_00_00.talkesdbnd.dcx=t"), cat, store, out an);
+        Check(mfg.Id == "map-for-goblins-expanded" && mfg.FromCatalog && mfg.Packages.SequenceEqual(new[] { "" }), "mod Nexus du catalogue sans disposition décrite : reconnu, contenu analysé");
+        Check(Conflicts.Compute(store, cat)[mfg.Id].Any(c => c.With == reg.Id && c.Files.Contains("regulation.bin")), "deux regulation.bin différents : incompatibles");
+        off = Conflicts.Resolve(store, cat);
+        Check(off.Count == 2 && off.Any(o => o.Key == fork) && off.Any(o => o.Key == mfg) && reg.Enabled && bar.Enabled && Conflicts.Resolve(store, cat).Count == 0,
+              "après résolution : plus aucun couple incompatible activé");
+
         Console.WriteLine("== Nexus (en ligne)");
         var found = Nexus.Search("fps", 5).Result;
         Check(found.Count > 0 && found.All(n => n.Id > 0 && n.Name.Length > 0), "recherche « fps » : " + found.Count + " résultats");
 
         Console.WriteLine("== Interface");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        known.Enabled = true; // mod non vérifié actif…
+        known.Enabled = true; // mods vérifiés et non vérifiés actifs…
         store.Save();
         var st = State.Load();
         st.Set("game_version", "2.6.0"); // …et le jeu vient de changer de version
@@ -211,8 +258,9 @@ static class Harness
         st.Save();
         var ui = new MainUi(game);
         var win = Show(ui, 6);
-        Check(Find<Grid>(win, "Overlay").Visibility == Visibility.Visible && !ModStore.Load().Get("unlock-the-fps").Enabled && ModStore.Load().Get(Seamless.Id).Enabled,
-              "après un patch : mod non vérifié désactivé, Seamless (compatible) gardé, message affiché");
+        var reloaded = ModStore.Load();
+        Check(Find<Grid>(win, "Overlay").Visibility == Visibility.Visible && !reloaded.Get(reg.Id).Enabled && reloaded.Get("unlock-the-fps").Enabled && reloaded.Get(Seamless.Id).Enabled,
+              "après un patch : mod non vérifié désactivé, mods vérifiés (Seamless, Unlock the FPS) gardés, message affiché");
         Render(Find<FrameworkElement>(win, "Root"), "ui_patch_dialog.png");
         Click(Find<Button>(win, "DlgOk"));
         Pump(0.5);
@@ -221,9 +269,29 @@ static class Harness
         Find<RadioButton>(win, "NavMods").IsChecked = true;
         Pump(0.8);
         Render(Find<FrameworkElement>(win, "Root"), "ui_mods_catalog.png");
+        Check(Find<Grid>(win, "Overlay").Visibility != Visibility.Visible, "démarrage : aucun couple incompatible à résoudre (déjà fait)");
         Find<RadioButton>(win, "SubInstalled").IsChecked = true;
         Pump(0.5);
         Render(Find<FrameworkElement>(win, "Root"), "ui_mods_installed.png");
+        var flcCard = "Free Lock-On Camera " + mFlc.Tag; // nom suivi du badge de version : pas la carte de Fix the Camera, qui le cite
+        var flcToggle = FindAll<CheckBox>(Find<StackPanel>(win, "InstalledList")).FirstOrDefault(c => FindAncestorText(c).Contains(flcCard));
+        Check(flcToggle != null && !flcToggle.IsEnabled && FindAncestorText(flcToggle).Contains("Bloqué par Fix the Camera"),
+              "onglet Installés : Free Lock-On Camera verrouillé, « Bloqué par Fix the Camera » + raison");
+        var installedScroll = Find<ScrollViewer>(win, "InstalledScroll");
+        installedScroll.ScrollToVerticalOffset(flcToggle == null ? 0 : flcToggle.TranslatePoint(new Point(0, 0), Find<StackPanel>(win, "InstalledList")).Y - 120);
+        Pump(0.3);
+        Render(Find<FrameworkElement>(win, "Root"), "ui_mods_blocked.png");
+        var flcSettings = FindAll<Button>(Find<StackPanel>(win, "InstalledList")).FirstOrDefault(b => (b.Content as string) == "Réglages" && FindAncestorText(b).Contains(flcCard));
+        if (flcSettings != null) { Click(flcSettings); Pump(0.5); }
+        var sheet = Find<Grid>(win, "Sheet");
+        Check(sheet.Visibility == Visibility.Visible && FindAll<TextBlock>(sheet).Any(t => t.Text == "Là où je vise"), "réglages de Free Lock-On Camera : choix lu depuis config.ini (modded_switch)");
+        Render(Find<FrameworkElement>(win, "Root"), "ui_flc_settings.png");
+        var nextChoice = FindAll<Button>(sheet).FirstOrDefault(b => (b.Content as string) == "›");
+        if (nextChoice != null) Click(nextChoice);
+        Click(Find<Button>(win, "SheetClose"));
+        Check(Ini.Load(Path.Combine(mFlc.Dir, "mods", "FreeLockOnCamera", "config.ini")).Values()["target_switching_mode"] == "vanilla_switch", "choix enregistré sous forme de mot (vanilla_switch)");
+        installedScroll.ScrollToTop();
+        Pump(0.2);
         var settingsBtn = FindAll<Button>(Find<StackPanel>(win, "InstalledList")).FirstOrDefault(b => (b.Content as string) == "Réglages" && FindAncestorText(b).Contains("Unlock"));
         if (settingsBtn != null) { Click(settingsBtn); Pump(0.5); }
         Check(Find<Grid>(win, "Sheet").Visibility == Visibility.Visible, "fenêtre de réglages d'un mod générée depuis le catalogue");
@@ -238,9 +306,29 @@ static class Harness
         Render(Find<FrameworkElement>(win, "Root"), "ui_mods_discover.png");
         win.Close();
 
+        Console.WriteLine("== Installer un mod incompatible depuis le catalogue (interface en espagnol)");
+        Installer.Uninstall(ModStore.Load(), flc.Id, game);
         st = State.Load(); st.Set("language", "es"); st.Save();
         win = Show(new MainUi(game), 4);
         Find<RadioButton>(win, "NavMods").IsChecked = true;
+        Pump(0.8);
+        var flcInstall = FindAll<Button>(Find<StackPanel>(win, "CatalogList")).FirstOrDefault(b => (b.Content as string) == "Instalar" && FindAncestorText(b).Contains("Free Lock-On Camera"));
+        Check(flcInstall != null && FindAncestorText(flcInstall).Contains("Incompatible con Fix the Camera, que está activado"), "catálogo: Free Lock-On Camera marcado incompatible, se instalará desactivado");
+        if (flcInstall != null)
+        {
+            Find<ScrollViewer>(win, "CatalogScroll").ScrollToVerticalOffset(flcInstall.TranslatePoint(new Point(0, 0), Find<StackPanel>(win, "CatalogList")).Y - 200);
+            Pump(0.3);
+            Render(Find<FrameworkElement>(win, "Root"), "ui_es_catalog_conflict.png");
+            OnUi(win, () => Click(flcInstall));
+            var t = System.Diagnostics.Stopwatch.StartNew();
+            while (Find<Grid>(win, "Overlay").Visibility != Visibility.Visible && t.Elapsed.TotalSeconds < 60) Pump(0.5);
+        }
+        var afterInstall = ModStore.Load().Get(flc.Id);
+        Check(Find<Grid>(win, "Overlay").Visibility == Visibility.Visible && Find<TextBlock>(win, "DlgText").Text.Contains("sigue desactivado") && afterInstall != null && !afterInstall.Enabled,
+              "instalado pero desactivado, con la explicación");
+        Render(Find<FrameworkElement>(win, "Root"), "ui_es_install_blocked.png");
+        Click(Find<Button>(win, "DlgOk"));
+        Pump(0.3);
         Find<RadioButton>(win, "SubInstalled").IsChecked = true;
         Pump(0.8);
         Render(Find<FrameworkElement>(win, "Root"), "ui_es_installed.png");

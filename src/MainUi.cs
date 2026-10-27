@@ -55,6 +55,7 @@ namespace ERSeamless
         string gameDir, gameVersion;
         GitHub.Release me3Latest;
         List<KeyValuePair<InstalledMod, CatalogMod>> pendingUpdates = new List<KeyValuePair<InstalledMod, CatalogMod>>();
+        Dictionary<string, List<ModConflict>> conflicts = new Dictionary<string, List<ModConflict>>(StringComparer.OrdinalIgnoreCase);
         bool busy, discoverLoaded, suppressToggle;
         TaskCompletionSource<bool> dialog;
         Form seamlessForm, sheetForm;
@@ -322,6 +323,7 @@ namespace ERSeamless
                 BuildSeamlessPanel();
                 RebuildModLists();
             }
+            await EnforceConflicts(null);
 
             try { me3Latest = await Me3.Latest(); }
             catch (Exception ex) { Log.Write("me3 check: " + ex.Message); }
@@ -650,15 +652,17 @@ namespace ERSeamless
             if (items.Length == 0) return;
             TextBlock txt; Button prev, next;
             ChoiceRow(host, Json.Loc(it.Label) ?? it.Key, Json.Loc(it.Hint), out txt, out prev, out next);
+            bool named = it.Values.Length == items.Length; // le fichier attend un mot (« modded_switch ») plutôt qu'un index
             Func<int> current = () =>
             {
                 int v;
+                if (named) return Math.Max(0, Array.FindIndex(it.Values, x => x.Equals(f.Get(it.Key), StringComparison.OrdinalIgnoreCase)));
                 return int.TryParse(f.Get(it.Key), out v) && v >= 0 && v < items.Length ? v : 0;
             };
             Action<int> select = v =>
             {
                 v = (v + items.Length) % items.Length;
-                f.Values[it.Key] = v.ToString(CultureInfo.InvariantCulture);
+                f.Values[it.Key] = named ? it.Values[v] : v.ToString(CultureInfo.InvariantCulture);
                 txt.Text = items[v];
             };
             prev.Click += (s, e) => select(current() - 1);
@@ -782,6 +786,7 @@ namespace ERSeamless
 
         void RebuildModLists()
         {
+            conflicts = Conflicts.Compute(store, catalog);
             var gv = gameVersion ?? "?";
             ModsInfo.Text = gameVersion != null ? L.F("mods_info", gameVersion) : "";
             SubCatalog.Content = L.T("sub_catalog");
@@ -857,6 +862,65 @@ namespace ERSeamless
             return Badge(L.T("badge_unverified"), "warn");
         }
 
+        // ───────────────────────── incompatibilités ─────────────────────────
+
+        string ModName(string id)
+        {
+            var m = store.Get(id);
+            if (m != null) return m.Name;
+            var cm = catalog.Find(id);
+            return cm != null ? cm.Name : id;
+        }
+
+        string ConflictReason(ModConflict c)
+        {
+            if (c.Kind == "files") return L.F("conflict_files", FileList(c.Files));
+            if (c.Kind == "deploy") return L.F("conflict_deploy", FileList(c.Files));
+            return Json.Loc(c.Reason) ?? L.T("conflict_declared");
+        }
+
+        static string FileList(List<string> files)
+        {
+            return string.Join(", ", files.Take(3)) + (files.Count > 3 ? " (+" + (files.Count - 3) + ")" : "");
+        }
+
+        string ConflictNames(IEnumerable<string> ids)
+        {
+            return string.Join(", ", ids.Select(ModName));
+        }
+
+        /// <summary>« Autre mod : raison », une ligne par incompatibilité.</summary>
+        string ConflictDetails(IEnumerable<ModConflict> list)
+        {
+            return string.Join("\n", list.Select(c => L.F("conflict_line", ModName(c.With), ConflictReason(c))));
+        }
+
+        Border ConflictBadge(string text, string kind, string tip)
+        {
+            var b = Badge(text, kind);
+            b.ToolTip = new TextBlock { Text = tip, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
+            return b;
+        }
+
+        /// <summary>Après un ajout, une mise à jour ou au démarrage : désactive les mods incompatibles avec un mod chargé avant eux et l'explique.</summary>
+        async Task EnforceConflicts(string addedId)
+        {
+            var off = Conflicts.Resolve(store, catalog);
+            if (off.Count == 0) return;
+            RebuildModLists();
+            RefreshStatus();
+            var added = off.FirstOrDefault(o => o.Key.Id.Equals(addedId ?? "", StringComparison.OrdinalIgnoreCase));
+            if (added.Key != null && off.Count == 1)
+                await Alert(L.T("conflict_title"), L.F("install_blocked_text", added.Key.Name, ModName(added.Value.With), ConflictReason(added.Value)));
+            else
+                await Alert(L.T("conflict_title"), ResolvedText(off));
+        }
+
+        string ResolvedText(List<KeyValuePair<InstalledMod, ModConflict>> off)
+        {
+            return L.F("resolved_text", string.Join("\n", off.Select(o => "• " + L.F("resolved_line", o.Key.Name, ModName(o.Value.With), ConflictReason(o.Value)))));
+        }
+
         Grid TwoColumns(UIElement left, UIElement right)
         {
             var g = new Grid();
@@ -873,11 +937,20 @@ namespace ERSeamless
             var info = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
             var gameplay = cm.Gameplay ? Badge(L.T("badge_gameplay"), "muted") : null;
             if (gameplay != null) gameplay.ToolTip = L.T("gameplay_tip");
-            info.Children.Add(Head(cm.Name, Badge(CategoryName(cm.Category), "muted"), CompatBadge(cm, m), gameplay));
+            // incompatibilités déclarées : en rouge si l'autre mod est activé (celui-ci s'installera alors désactivé)
+            var declared = Conflicts.DeclaredFor(catalog, cm);
+            var active = declared.Where(c => { var o = store.Get(c.Id); return o != null && o.Enabled && o != m; }).ToList();
+            var tip = string.Join("\n", declared.Select(c => L.F("conflict_line", ModName(c.Id), Json.Loc(c.Reason) ?? L.T("conflict_declared"))));
+            Border incompatible = null;
+            if (m == null && active.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(active.Select(c => c.Id))), "bad", tip);
+            else if (declared.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(declared.Select(c => c.Id))), "muted", tip);
+            info.Children.Add(Head(cm.Name, Badge(CategoryName(cm.Category), "muted"), CompatBadge(cm, m), gameplay, incompatible));
             var sub = L.F("by_author", cm.Author) + (cm.Version != null ? " · " + cm.Version : "") + " · " + L.T(cm.Source.IsGitHub ? "source_github" : "source_nexus");
             info.Children.Add(new TextBlock { Text = sub, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 0, 0) });
             var desc = Json.Loc(cm.Description);
             if (desc != null) info.Children.Add(new TextBlock { Text = desc, FontSize = 12.5, Foreground = B("Text"), Opacity = 0.85, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 0) });
+            if (m == null && active.Count > 0)
+                info.Children.Add(new TextBlock { Text = L.F("catalog_will_be_disabled", ConflictNames(active.Select(c => c.Id))), FontSize = 12, Foreground = B("Bad"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 0) });
 
             var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             if (m != null)
@@ -894,7 +967,7 @@ namespace ERSeamless
             }
             if (cm.NexusPage != null && (m == null || !cm.Source.IsGitHub))
             {
-                var nb = ActionButton(L.T("btn_nexus_page"), new Thickness(8, 0, 0, 0), () => OpenUrl(cm.NexusPage));
+                var nb = ActionButton(L.T(cm.Nexus > 0 ? "btn_nexus_page" : "btn_mod_page"), new Thickness(8, 0, 0, 0), () => OpenUrl(cm.NexusPage));
                 if (!cm.Source.IsGitHub && m == null) nb.ToolTip = L.T("nexus_manual_tip");
                 actions.Children.Add(nb);
             }
@@ -910,9 +983,20 @@ namespace ERSeamless
             g.ColumnDefinitions.Add(new ColumnDefinition());
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+            List<ModConflict> partners;
+            if (!conflicts.TryGetValue(m.Id, out partners)) partners = new List<ModConflict>();
+            var blockers = m.Enabled ? new List<ModConflict>() : Conflicts.Blockers(conflicts, store, m);
+
             var cb = new CheckBox { Style = St("Toggle"), IsChecked = m.Enabled, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
             cb.Checked += async (s, e) => await SetEnabled(m, true, cb);
             cb.Unchecked += async (s, e) => await SetEnabled(m, false, cb);
+            if (blockers.Count > 0) // un mod incompatible est activé : interrupteur verrouillé
+            {
+                cb.IsEnabled = false;
+                cb.Opacity = 0.45;
+                ToolTipService.SetShowOnDisabled(cb, true);
+                cb.ToolTip = L.F("blocked_tip", ConflictNames(blockers.Select(c => c.With)));
+            }
             g.Children.Add(cb);
 
             var order = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
@@ -928,13 +1012,18 @@ namespace ERSeamless
 
             var info = new StackPanel { Margin = new Thickness(0, 0, 16, 0), Opacity = m.Enabled ? 1 : 0.6 };
             var src = m.Source == "github" ? "source_github" : m.Source == "nexus" ? "source_nexus" : "source_manual";
-            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted")));
+            Border incompatible = null;
+            if (blockers.Count > 0) incompatible = ConflictBadge(L.F("badge_blocked_by", ConflictNames(blockers.Select(c => c.With))), "bad", ConflictDetails(blockers));
+            else if (partners.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(partners.Select(c => c.With))), "muted", ConflictDetails(partners));
+            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted"), incompatible));
             var parts = new List<string>();
             if (m.Natives.Count > 0) parts.Add(L.F("n_dlls", m.Natives.Count));
             if (m.Packages.Count > 0) parts.Add(L.F("n_packages", m.Packages.Count));
             if (m.Deploy.Count > 0) parts.Add(L.T("has_deploy"));
             var details = (m.Author.Length > 0 ? L.F("by_author", m.Author) + " · " : "") + string.Join(" · ", parts);
             info.Children.Add(new TextBlock { Text = details, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 3, 0, 0), TextWrapping = TextWrapping.Wrap });
+            if (blockers.Count > 0)
+                info.Children.Add(new TextBlock { Text = ConflictDetails(blockers), FontSize = 12, Foreground = B("Bad"), Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
             Grid.SetColumn(info, 2);
             g.Children.Add(info);
 
@@ -955,6 +1044,13 @@ namespace ERSeamless
             if (busy)
             {
                 suppressToggle = true; cb.IsChecked = m.Enabled; suppressToggle = false;
+                return;
+            }
+            var blockers = enable ? Conflicts.Blockers(Conflicts.Compute(store, catalog), store, m) : new List<ModConflict>();
+            if (blockers.Count > 0)
+            {
+                suppressToggle = true; cb.IsChecked = false; suppressToggle = false;
+                await Alert(L.T("conflict_title"), L.F("enable_blocked_text", m.Name, ConflictNames(blockers.Select(c => c.With)), ConflictDetails(blockers)));
                 return;
             }
             if (enable && !Compatible(m) &&
@@ -999,7 +1095,10 @@ namespace ERSeamless
             if (cm.Id == Seamless.Id && ok) AfterSeamlessInstalled();
             RebuildModLists();
             RefreshStatus();
-            if (ok && !cm.Supports(gameVersion))
+            if (!ok) return;
+            await EnforceConflicts(cm.Id);
+            var m = store.Get(cm.Id);
+            if (m != null && m.Enabled && !cm.Supports(gameVersion))
                 await Alert(L.F("installed_mod", cm.Name), L.F("installed_unverified", cm.Name, gameVersion ?? "?"));
         }
 
@@ -1051,6 +1150,7 @@ namespace ERSeamless
             else msg += "\n\n" + L.T("import_unverified_note");
             if (an != null && an.LoaderIgnored) msg += "\n\n" + L.T("import_loader_ignored");
             await Alert(L.T("import_mod_done_title"), msg);
+            await EnforceConflicts(m.Id);
         }
 
         async Task Discover(string text)
@@ -1328,6 +1428,7 @@ namespace ERSeamless
             if (seamlessUpdated) BuildSeamlessPanel();
             RebuildModLists();
             RefreshStatus();
+            await EnforceConflicts(null); // une nouvelle version peut remplacer d'autres fichiers du jeu
         }
 
         async Task Play()
@@ -1339,6 +1440,14 @@ namespace ERSeamless
                 return;
             }
             if (!await EnsureBase(true)) return;
+            var resolved = Conflicts.Resolve(store, catalog); // filet de sécurité : jamais deux mods incompatibles au lancement
+            if (resolved.Count > 0)
+            {
+                RebuildModLists();
+                RefreshStatus();
+                await Alert(L.T("conflict_title"), ResolvedText(resolved));
+                return;
+            }
             var seamless = store.Get(Seamless.Id);
             bool coop = seamless != null && seamless.Enabled;
             bool classic = Engine == "classic";

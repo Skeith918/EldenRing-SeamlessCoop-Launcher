@@ -473,11 +473,19 @@ namespace ERSeamless
                 if (cm != null)
                 {
                     m = store.Get(cm.Id) ?? new InstalledMod { Id = cm.Id };
+                    if (cm.AutoLayout && analysis.Empty) throw new UserError(L.F("err_import_mismatch", cm.Name));
                     foreach (var p in cm.Natives.Concat(cm.Packages).Concat(cm.Deploy.Select(kv => kv.Key)))
                         if (!File.Exists(Path.Combine(dir, Files.Native(p))) && !Directory.Exists(Path.Combine(dir, Files.Native(p))))
                             throw new UserError(L.F("err_import_mismatch", cm.Name));
                     Place(dir, m, cm.Settings);
                     ApplyCatalog(m, cm);
+                    if (cm.AutoLayout) // disposition déduite de l'archive, métadonnées du catalogue
+                    {
+                        m.Natives = analysis.Natives;
+                        m.Packages = analysis.Packages;
+                        m.Deploy = analysis.Deploy;
+                        if (m.SettingsFile == null) m.SettingsFile = analysis.SettingsFile;
+                    }
                     m.Source = "nexus";
                     m.Version = cm.Version ?? "";
                 }

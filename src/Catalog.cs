@@ -31,11 +31,12 @@ namespace ERSeamless
         }
     }
 
-    /// <summary>Un contrôle : toggle (0/1), slider, choice (index), text, ou note (simple texte d'aide).</summary>
+    /// <summary>Un contrôle : toggle (0/1), slider, choice (index, ou valeur de « values »), text, ou note (simple texte d'aide).</summary>
     public class SettingItem
     {
         public string Key, Section, Type, Default, Sanitize;
         public object Label, Hint, Placeholder, Zero, Choices, Format;
+        public string[] Values = new string[0];
         public int Min, Max = 100, Step = 1, MaxLength = 120;
     }
 
@@ -82,6 +83,7 @@ namespace ERSeamless
                         Placeholder = Json.Get(i, "placeholder"),
                         Zero = Json.Get(i, "zero"),
                         Choices = Json.Get(i, "choices"),
+                        Values = Json.Strs(i, "values"),
                         Min = Json.Int(i, "min", 0),
                         Max = Json.Int(i, "max", 100),
                         Step = Json.Int(i, "step", 1),
@@ -132,13 +134,21 @@ namespace ERSeamless
         }
     }
 
+    /// <summary>Incompatibilité vérifiée déclarée par le catalogue : identifiant de l'autre mod et explication affichée.</summary>
+    public class CatalogConflict
+    {
+        public string Id;
+        public object Reason;
+    }
+
     public class CatalogMod
     {
         public string Id, Name, Author, Category, Version, Homepage, Special;
         public object Description;
         public int Nexus;
         public ModSource Source = new ModSource();
-        public string[] Games = new string[0], Natives = new string[0], Packages = new string[0], Conflicts = new string[0], Requires = new string[0];
+        public string[] Games = new string[0], Natives = new string[0], Packages = new string[0], Requires = new string[0];
+        public List<CatalogConflict> Conflicts = new List<CatalogConflict>();
         public List<KeyValuePair<string, string>> Deploy = new List<KeyValuePair<string, string>>();
         public bool Gameplay, Core;
         public SettingsSchema Settings;
@@ -167,6 +177,12 @@ namespace ERSeamless
             get { return Nexus > 0 ? "https://www.nexusmods.com/eldenring/mods/" + Nexus : Homepage; }
         }
 
+        /// <summary>Le catalogue ne décrit pas les fichiers du mod : l'import analyse alors le contenu de l'archive.</summary>
+        public bool AutoLayout
+        {
+            get { return Natives.Length == 0 && Packages.Length == 0 && Deploy.Count == 0; }
+        }
+
         public static CatalogMod From(Dictionary<string, object> d)
         {
             var m = new CatalogMod
@@ -184,7 +200,6 @@ namespace ERSeamless
                 Games = Json.Strs(d, "games"),
                 Natives = Json.Strs(d, "natives"),
                 Packages = Json.Strs(d, "packages"),
-                Conflicts = Json.Strs(d, "conflicts"),
                 Requires = Json.Strs(d, "requires"),
                 Gameplay = Json.Bool(d, "gameplay", false),
                 Core = Json.Bool(d, "core", false),
@@ -196,6 +211,14 @@ namespace ERSeamless
                 var o = x as Dictionary<string, object>;
                 if (s != null) m.Deploy.Add(new KeyValuePair<string, string>(s, s));
                 else if (o != null) m.Deploy.Add(new KeyValuePair<string, string>(Json.Str(o, "from"), Json.Str(o, "to", Json.Str(o, "from"))));
+            }
+            // « conflicts » : ["id"] ou [{ "id": …, "reason": … }]
+            foreach (var x in Json.List(d, "conflicts"))
+            {
+                var s = x as string;
+                var o = x as Dictionary<string, object>;
+                var c = s != null ? new CatalogConflict { Id = s } : o != null ? new CatalogConflict { Id = Json.Str(o, "id"), Reason = Json.Get(o, "reason") } : null;
+                if (c != null && !string.IsNullOrEmpty(c.Id)) m.Conflicts.Add(c);
             }
             return string.IsNullOrEmpty(m.Id) || string.IsNullOrEmpty(m.Name) ? null : m;
         }
