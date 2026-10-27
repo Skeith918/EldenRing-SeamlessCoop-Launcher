@@ -1,6 +1,6 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Elden Ring · Seamless Co-op" Width="1100" Height="620"
+        Title="Elden Ring · Seamless Co-op" Width="1280" Height="720"
         ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen"
         Background="#0B0A09" UseLayoutRounding="True"
         FontFamily="Segoe UI" FontSize="13" Foreground="#EDE6D6">
@@ -26,6 +26,29 @@
             <Border Background="#F2141312" BorderBrush="#808F7745" BorderThickness="1" CornerRadius="4" Padding="10,7" MaxWidth="380">
               <ContentPresenter TextElement.Foreground="#EDE6D6" TextElement.FontSize="12"/>
             </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- barre de défilement fine et dorée -->
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="8"/>
+      <Setter Property="MinWidth" Value="8"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+              <Track.Thumb>
+                <Thumb>
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Border CornerRadius="4" Background="#59D4B26A" Margin="1,0"/>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
@@ -99,13 +122,14 @@
       <Setter Property="Foreground" Value="{StaticResource Text}"/>
       <Setter Property="FontSize" Value="12.5"/>
       <Setter Property="Height" Value="34"/>
+      <Setter Property="Padding" Value="10,0"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Focusable" Value="False"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Border x:Name="B" CornerRadius="3" BorderBrush="#4DD4B26A" BorderThickness="1" Background="#40000000">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10,0"/>
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
@@ -142,6 +166,9 @@
                 <Setter TargetName="B" Property="Background" Value="#33D4B26A"/>
                 <Setter TargetName="B" Property="BorderBrush" Value="{StaticResource Gold}"/>
               </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.3"/>
+              </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
@@ -175,7 +202,7 @@
       <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
       <Setter Property="FontSize" Value="10"/>
       <Setter Property="Width" Value="46"/>
-      <Setter Property="Height" Value="34"/>
+      <Setter Property="Height" Value="40"/>
       <Setter Property="Focusable" Value="False"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -187,6 +214,42 @@
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter TargetName="B" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
                 <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- navigation principale (barre de titre) -->
+    <Style x:Key="Nav" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontFamily" Value="{DynamicResource Serif}"/>
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="GroupName" Value="Nav"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Grid Background="Transparent" Margin="14,0">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4,0,4,1"/>
+              <Rectangle x:Name="U" Height="2" VerticalAlignment="Bottom" Fill="{StaticResource GoldGrad}" Visibility="Hidden"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource Text}"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource Gold}"/>
+                <Setter TargetName="U" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -201,12 +264,11 @@
       <Setter Property="FontWeight" Value="Bold"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Focusable" Value="False"/>
-      <Setter Property="GroupName" Value="Tabs"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="RadioButton">
             <Grid Background="Transparent">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,3"/>
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
               <Rectangle x:Name="U" Height="2" VerticalAlignment="Bottom" Fill="{StaticResource GoldGrad}" Visibility="Hidden"/>
             </Grid>
             <ControlTemplate.Triggers>
@@ -250,6 +312,9 @@
                 <Setter TargetName="Track" Property="BorderBrush" Value="#F4E2A8"/>
                 <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
                 <Setter TargetName="Knob" Property="Fill" Value="#1C1509"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -378,162 +443,219 @@
     </Style>
   </Window.Resources>
 
-  <Grid x:Name="Root" ClipToBounds="True">
-    <Image x:Name="Bg" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+  <Viewbox Stretch="Uniform">
+    <Grid x:Name="Root" Width="1280" Height="720" ClipToBounds="True">
+      <Image x:Name="Bg" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-    <!-- lisibilité : assombrit la colonne gauche, le haut et le bas, laisse le groupe de joueurs visible au centre -->
-    <Rectangle IsHitTestVisible="False">
-      <Rectangle.Fill>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-          <GradientStop Color="#EB080706" Offset="0"/>
-          <GradientStop Color="#B3080706" Offset="0.25"/>
-          <GradientStop Color="#00080706" Offset="0.42"/>
-          <GradientStop Color="#00080706" Offset="0.62"/>
-          <GradientStop Color="#73080706" Offset="1"/>
-        </LinearGradientBrush>
-      </Rectangle.Fill>
-    </Rectangle>
-    <Rectangle IsHitTestVisible="False">
-      <Rectangle.Fill>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-          <GradientStop Color="#99080706" Offset="0"/>
-          <GradientStop Color="#00080706" Offset="0.18"/>
-          <GradientStop Color="#00080706" Offset="0.6"/>
-          <GradientStop Color="#D9080706" Offset="1"/>
-        </LinearGradientBrush>
-      </Rectangle.Fill>
-    </Rectangle>
+      <!-- lisibilité : colonne gauche, haut et bas assombris, le groupe de joueurs reste visible au centre -->
+      <Rectangle x:Name="PlayShade" IsHitTestVisible="False">
+        <Rectangle.Fill>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#EB080706" Offset="0"/>
+            <GradientStop Color="#B3080706" Offset="0.25"/>
+            <GradientStop Color="#00080706" Offset="0.4"/>
+            <GradientStop Color="#00080706" Offset="0.64"/>
+            <GradientStop Color="#73080706" Offset="1"/>
+          </LinearGradientBrush>
+        </Rectangle.Fill>
+      </Rectangle>
+      <Rectangle IsHitTestVisible="False">
+        <Rectangle.Fill>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#A6080706" Offset="0"/>
+            <GradientStop Color="#00080706" Offset="0.18"/>
+            <GradientStop Color="#00080706" Offset="0.6"/>
+            <GradientStop Color="#D9080706" Offset="1"/>
+          </LinearGradientBrush>
+        </Rectangle.Fill>
+      </Rectangle>
+      <Rectangle x:Name="ModsShade" Fill="#80080706" IsHitTestVisible="False" Visibility="Collapsed"/>
 
-    <!-- titre -->
-    <StackPanel Margin="50,62,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
-      <TextBlock x:Name="Title" Text="ELDEN RING" FontFamily="{DynamicResource Serif}" FontSize="62" Foreground="{StaticResource GoldGrad}">
-        <TextBlock.Effect>
-          <DropShadowEffect Color="Black" BlurRadius="20" ShadowDepth="0" Opacity="0.85"/>
-        </TextBlock.Effect>
-      </TextBlock>
-      <TextBlock x:Name="Subtitle" Text="SEAMLESS CO-OP" FontFamily="{DynamicResource Serif}" FontSize="19" Foreground="{StaticResource Text}" Margin="3,0,0,0"/>
-      <StackPanel Orientation="Horizontal" Margin="4,14,0,14">
-        <Rectangle Width="7" Height="7" Fill="{StaticResource Gold}" VerticalAlignment="Center">
-          <Rectangle.LayoutTransform>
-            <RotateTransform Angle="45"/>
-          </Rectangle.LayoutTransform>
-        </Rectangle>
-        <Rectangle Width="260" Height="1" VerticalAlignment="Center" Margin="6,0,0,0">
-          <Rectangle.Fill>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-              <GradientStop Color="#FFD4B26A" Offset="0"/>
-              <GradientStop Color="#00D4B26A" Offset="1"/>
-            </LinearGradientBrush>
-          </Rectangle.Fill>
-        </Rectangle>
-      </StackPanel>
-      <TextBlock x:Name="Tagline" FontSize="14" Foreground="{StaticResource Text}" Opacity="0.85" Margin="3,0,0,0"/>
-    </StackPanel>
+      <!-- ═══════════ page JOUER ═══════════ -->
+      <Grid x:Name="PlayPage">
+        <StackPanel Margin="56,74,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
+          <TextBlock x:Name="Title" Text="ELDEN RING" FontFamily="{DynamicResource Serif}" FontSize="66" Foreground="{StaticResource GoldGrad}">
+            <TextBlock.Effect>
+              <DropShadowEffect Color="Black" BlurRadius="20" ShadowDepth="0" Opacity="0.85"/>
+            </TextBlock.Effect>
+          </TextBlock>
+          <TextBlock x:Name="Subtitle" Text="SEAMLESS CO-OP" FontFamily="{DynamicResource Serif}" FontSize="20" Foreground="{StaticResource Text}" Margin="3,0,0,0"/>
+          <StackPanel Orientation="Horizontal" Margin="4,14,0,14">
+            <Rectangle Width="7" Height="7" Fill="{StaticResource Gold}" VerticalAlignment="Center">
+              <Rectangle.LayoutTransform>
+                <RotateTransform Angle="45"/>
+              </Rectangle.LayoutTransform>
+            </Rectangle>
+            <Rectangle Width="280" Height="1" VerticalAlignment="Center" Margin="6,0,0,0">
+              <Rectangle.Fill>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                  <GradientStop Color="#FFD4B26A" Offset="0"/>
+                  <GradientStop Color="#00D4B26A" Offset="1"/>
+                </LinearGradientBrush>
+              </Rectangle.Fill>
+            </Rectangle>
+          </StackPanel>
+          <TextBlock x:Name="Tagline" FontSize="14.5" Foreground="{StaticResource Text}" Opacity="0.85" Margin="3,0,0,0"/>
+        </StackPanel>
 
-    <!-- état + actions -->
-    <StackPanel Width="340" Margin="50,0,0,30" HorizontalAlignment="Left" VerticalAlignment="Bottom">
-      <Grid Margin="0,0,0,16">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="16"/>
-          <ColumnDefinition Width="58"/>
-          <ColumnDefinition/>
-        </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="25"/>
-          <RowDefinition Height="25"/>
-          <RowDefinition Height="25"/>
-          <RowDefinition Height="25"/>
-        </Grid.RowDefinitions>
-        <Ellipse x:Name="GameDot" Grid.Row="0" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
-        <Ellipse x:Name="ModDot" Grid.Row="1" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
-        <Ellipse x:Name="EacDot" Grid.Row="2" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
-        <Ellipse x:Name="SteamDot" Grid.Row="3" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
-        <TextBlock x:Name="LblGame" Grid.Row="0" Grid.Column="1" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
-        <TextBlock Grid.Row="1" Grid.Column="1" Text="MOD" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" Text="EAC" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" Text="STEAM" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
-        <DockPanel Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" LastChildFill="True">
-          <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Style="{StaticResource Link}" Content="Changer" Margin="10,0,0,0" VerticalAlignment="Center"/>
-          <TextBlock x:Name="GameText" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-        </DockPanel>
-        <TextBlock x:Name="ModText" Grid.Row="1" Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-        <TextBlock x:Name="EacText" Grid.Row="2" Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-        <TextBlock x:Name="SteamText" Grid.Row="3" Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-      </Grid>
-
-      <TextBlock x:Name="StatusText" FontSize="12.5" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,0,0,7"/>
-      <ProgressBar x:Name="Progress" Style="{StaticResource GoldProgress}" Maximum="100" Visibility="Hidden" Margin="0,0,0,16"/>
-
-      <Button x:Name="UpdateBtn" Style="{StaticResource Ghost}" Height="40" Margin="0,0,0,12" Visibility="Collapsed"/>
-      <Button x:Name="MainBtn" Style="{StaticResource GoldButton}" Height="58" Content="JOUER"/>
-    </StackPanel>
-
-    <!-- panneau de réglages (verre dépoli) -->
-    <Border x:Name="Panel" Width="356" Margin="0,54,28,28" HorizontalAlignment="Right" CornerRadius="10" BorderThickness="1" BorderBrush="#47D4B26A">
-      <Grid x:Name="PanelInner">
-        <Canvas ClipToBounds="True">
-          <Image x:Name="PanelBg" Stretch="UniformToFill">
-            <Image.Effect>
-              <BlurEffect Radius="26" RenderingBias="Performance"/>
-            </Image.Effect>
-          </Image>
-        </Canvas>
-        <Border Background="#B80E0D0B"/>
-        <DockPanel Margin="24,10,24,18">
-          <Grid DockPanel.Dock="Top" Height="40" Margin="0,0,0,18">
+        <StackPanel Width="370" Margin="56,0,0,34" HorizontalAlignment="Left" VerticalAlignment="Bottom">
+          <Grid Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition/>
-              <ColumnDefinition/>
+              <ColumnDefinition Width="16"/>
+              <ColumnDefinition Width="74"/>
               <ColumnDefinition/>
             </Grid.ColumnDefinitions>
-            <Rectangle Grid.ColumnSpan="3" Height="1" VerticalAlignment="Bottom" Fill="#33D4B26A"/>
-            <RadioButton x:Name="TabSession" Grid.Column="0" Style="{StaticResource Tab}" Content="SESSION" IsChecked="True"/>
-            <RadioButton x:Name="TabDiff" Grid.Column="1" Style="{StaticResource Tab}" Content="DIFFICULTÉ"/>
-            <RadioButton x:Name="TabAdv" Grid.Column="2" Style="{StaticResource Tab}" Content="AVANCÉ"/>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="25"/>
+              <RowDefinition Height="25"/>
+              <RowDefinition Height="25"/>
+              <RowDefinition Height="25"/>
+            </Grid.RowDefinitions>
+            <Ellipse x:Name="GameDot" Grid.Row="0" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
+            <Ellipse x:Name="ModsDot" Grid.Row="1" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
+            <Ellipse x:Name="EngineDot" Grid.Row="2" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
+            <Ellipse x:Name="SteamDot" Grid.Row="3" Width="7" Height="7" Fill="{StaticResource Off}" HorizontalAlignment="Left"/>
+            <TextBlock x:Name="LblGame" Grid.Row="0" Grid.Column="1" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
+            <TextBlock x:Name="LblMods" Grid.Row="1" Grid.Column="1" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
+            <TextBlock x:Name="LblEngine" Grid.Row="2" Grid.Column="1" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="STEAM" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource GoldDim}" VerticalAlignment="Center"/>
+            <DockPanel Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" LastChildFill="True">
+              <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Style="{StaticResource Link}" Margin="10,0,0,0" VerticalAlignment="Center"/>
+              <TextBlock x:Name="GameText" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </DockPanel>
+            <DockPanel Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" LastChildFill="True">
+              <Button x:Name="ManageBtn" DockPanel.Dock="Right" Style="{StaticResource Link}" Margin="10,0,0,0" VerticalAlignment="Center"/>
+              <TextBlock x:Name="ModsText" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </DockPanel>
+            <TextBlock x:Name="EngineText" Grid.Row="2" Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            <TextBlock x:Name="SteamText" Grid.Row="3" Grid.Column="2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
           </Grid>
-          <Grid>
-            <StackPanel x:Name="PageSession"/>
-            <StackPanel x:Name="PageDiff" Visibility="Collapsed"/>
-            <StackPanel x:Name="PageAdv" Visibility="Collapsed"/>
-          </Grid>
-        </DockPanel>
-      </Grid>
-    </Border>
 
-    <!-- barre de titre -->
-    <Grid VerticalAlignment="Top" Height="34">
-      <TextBlock x:Name="Caption" Margin="16,0,0,0" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}"/>
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button x:Name="LangBtn" Style="{StaticResource TitleBtn}" Width="Auto" Tag="#22FFFFFF">
-          <StackPanel Orientation="Horizontal" Margin="12,0">
-            <TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center"/>
-            <TextBlock x:Name="LangCode" FontFamily="Segoe UI" FontSize="11.5" FontWeight="SemiBold" Margin="7,0,0,1" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-        <Button x:Name="MinBtn" Style="{StaticResource TitleBtn}" Content="&#xE921;" Tag="#22FFFFFF"/>
-        <Button x:Name="CloseBtn" Style="{StaticResource TitleBtn}" Content="&#xE8BB;" Tag="#C42B1C"/>
-      </StackPanel>
-      <Popup x:Name="LangPopup" PlacementTarget="{Binding ElementName=LangBtn}" Placement="Bottom" VerticalOffset="2"
-             StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-        <Border Width="170" Background="#F5141210" BorderBrush="#808F7745" BorderThickness="1" CornerRadius="6" Padding="5">
-          <StackPanel x:Name="LangList"/>
-        </Border>
-      </Popup>
-    </Grid>
+          <TextBlock x:Name="StatusText" FontSize="12.5" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,0,0,7"/>
+          <ProgressBar x:Name="Progress" Style="{StaticResource GoldProgress}" Maximum="100" Visibility="Hidden" Margin="0,0,0,16"/>
 
-    <!-- boîte de dialogue intégrée -->
-    <Grid x:Name="Overlay" Background="#B3000000" Margin="0,34,0,0" Visibility="Collapsed">
-      <Border Width="470" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#F5141210"
-              BorderBrush="#808F7745" BorderThickness="1" CornerRadius="8" Padding="28,22,28,24">
-        <StackPanel>
-          <TextBlock x:Name="DlgTitle" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="19" Foreground="{StaticResource Gold}" TextWrapping="Wrap"/>
-          <TextBlock x:Name="DlgText" Margin="0,12,0,22" TextWrapping="Wrap" LineHeight="20" FontSize="13.5"/>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="DlgCancel" Style="{StaticResource Ghost}" FontSize="13" Height="36" Padding="20,0" Margin="0,0,10,0"/>
-            <Button x:Name="DlgOk" Style="{StaticResource GoldButton}" FontSize="14" Height="36" Padding="24,0"/>
-          </StackPanel>
+          <Button x:Name="UpdateBtn" Style="{StaticResource Ghost}" Height="40" Margin="0,0,0,12" Visibility="Collapsed"/>
+          <Button x:Name="MainBtn" Style="{StaticResource GoldButton}" Height="60"/>
         </StackPanel>
-      </Border>
+
+        <!-- réglages de Seamless (verre dépoli) -->
+        <Border x:Name="Panel" Width="384" Margin="0,60,28,28" HorizontalAlignment="Right" CornerRadius="10" BorderThickness="1" BorderBrush="#47D4B26A">
+          <Grid x:Name="PanelInner">
+            <DockPanel Margin="24,10,24,18">
+              <Grid DockPanel.Dock="Top" Height="40" Margin="0,0,0,18">
+                <Rectangle Height="1" VerticalAlignment="Bottom" Fill="#33D4B26A"/>
+                <UniformGrid x:Name="PanelTabs" Rows="1"/>
+              </Grid>
+              <Grid x:Name="PanelPages"/>
+            </DockPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- ═══════════ page MODS ═══════════ -->
+      <Grid x:Name="ModsPage" Visibility="Collapsed">
+        <Border Margin="28,60,28,28" CornerRadius="10" BorderThickness="1" BorderBrush="#47D4B26A">
+          <Grid x:Name="ModsInner">
+            <DockPanel Margin="26,10,16,18">
+              <Grid DockPanel.Dock="Top" Height="44" Margin="0,0,10,14">
+                <Rectangle Height="1" VerticalAlignment="Bottom" Fill="#33D4B26A"/>
+                <StackPanel Orientation="Horizontal">
+                  <RadioButton x:Name="SubCatalog" Style="{StaticResource Tab}" GroupName="ModsTabs" Padding="2,0,2,3" Margin="0,0,30,0" IsChecked="True"/>
+                  <RadioButton x:Name="SubInstalled" Style="{StaticResource Tab}" GroupName="ModsTabs" Padding="2,0,2,3" Margin="0,0,30,0"/>
+                  <RadioButton x:Name="SubDiscover" Style="{StaticResource Tab}" GroupName="ModsTabs" Padding="2,0,2,3"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,6">
+                  <TextBlock x:Name="ModsInfo" Foreground="{StaticResource Muted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                  <Button x:Name="ImportZipBtn" Style="{StaticResource Action}" Margin="0,0,8,0" Padding="14,0"/>
+                  <Button x:Name="ImportDirBtn" Style="{StaticResource Action}" Padding="14,0"/>
+                </StackPanel>
+              </Grid>
+              <Grid>
+                <ScrollViewer x:Name="CatalogScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel x:Name="CatalogList" Margin="0,0,12,0"/>
+                </ScrollViewer>
+                <ScrollViewer x:Name="InstalledScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="Collapsed">
+                  <StackPanel x:Name="InstalledList" Margin="0,0,12,0"/>
+                </ScrollViewer>
+                <DockPanel x:Name="DiscoverPage" Visibility="Collapsed">
+                  <Grid DockPanel.Dock="Top" Margin="0,0,22,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="SearchBox" Style="{StaticResource Input}"/>
+                    <TextBlock x:Name="SearchPh" IsHitTestVisible="False" Margin="13,0,0,0" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource Muted}" Opacity="0.7"/>
+                    <Button x:Name="SearchBtn" Grid.Column="1" Style="{StaticResource Ghost}" Height="36" Padding="20,0" Margin="10,0,0,0"/>
+                  </Grid>
+                  <TextBlock x:Name="DiscoverHint" DockPanel.Dock="Top" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,22,12"/>
+                  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="DiscoverList" Margin="0,0,12,0"/>
+                  </ScrollViewer>
+                </DockPanel>
+              </Grid>
+            </DockPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- barre de titre -->
+      <Grid VerticalAlignment="Top" Height="40">
+        <TextBlock x:Name="Caption" Margin="18,0,0,0" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource Muted}"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <RadioButton x:Name="NavPlay" Style="{StaticResource Nav}" IsChecked="True"/>
+          <RadioButton x:Name="NavMods" Style="{StaticResource Nav}"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Button x:Name="LangBtn" Style="{StaticResource TitleBtn}" Width="Auto" Tag="#22FFFFFF">
+            <StackPanel Orientation="Horizontal" Margin="12,0">
+              <TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center"/>
+              <TextBlock x:Name="LangCode" FontFamily="Segoe UI" FontSize="11.5" FontWeight="SemiBold" Margin="7,0,0,1" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="MinBtn" Style="{StaticResource TitleBtn}" Content="&#xE921;" Tag="#22FFFFFF"/>
+          <Button x:Name="CloseBtn" Style="{StaticResource TitleBtn}" Content="&#xE8BB;" Tag="#C42B1C"/>
+        </StackPanel>
+        <Popup x:Name="LangPopup" PlacementTarget="{Binding ElementName=LangBtn}" Placement="Bottom" VerticalOffset="2"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+          <Border Width="170" Background="#F5141210" BorderBrush="#808F7745" BorderThickness="1" CornerRadius="6" Padding="5">
+            <StackPanel x:Name="LangList"/>
+          </Border>
+        </Popup>
+      </Grid>
+
+      <!-- réglages d'un mod -->
+      <Grid x:Name="Sheet" Background="#B3000000" Margin="0,40,0,0" Visibility="Collapsed">
+        <Border Width="580" MaxHeight="600" VerticalAlignment="Center" Background="#F5141210" BorderBrush="#808F7745" BorderThickness="1" CornerRadius="8">
+          <DockPanel Margin="28,20,16,20">
+            <TextBlock x:Name="SheetTitle" DockPanel.Dock="Top" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="19" Foreground="{StaticResource Gold}" Margin="0,0,12,10" TextTrimming="CharacterEllipsis"/>
+            <Grid DockPanel.Dock="Top" Height="38" Margin="0,0,12,16">
+              <Rectangle Height="1" VerticalAlignment="Bottom" Fill="#33D4B26A"/>
+              <UniformGrid x:Name="SheetTabs" Rows="1"/>
+            </Grid>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,12,0">
+              <Button x:Name="SheetClose" Style="{StaticResource GoldButton}" FontSize="14" Height="36" Padding="26,0"/>
+            </StackPanel>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <Grid x:Name="SheetPages" Margin="0,0,14,0"/>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Grid>
+
+      <!-- boîte de dialogue intégrée -->
+      <Grid x:Name="Overlay" Background="#B3000000" Margin="0,40,0,0" Visibility="Collapsed">
+        <Border Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#F5141210"
+                BorderBrush="#808F7745" BorderThickness="1" CornerRadius="8" Padding="28,22,28,24">
+          <StackPanel>
+            <TextBlock x:Name="DlgTitle" FontFamily="{DynamicResource Serif}" FontWeight="Bold" FontSize="19" Foreground="{StaticResource Gold}" TextWrapping="Wrap"/>
+            <TextBlock x:Name="DlgText" Margin="0,12,0,22" TextWrapping="Wrap" LineHeight="20" FontSize="13.5"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button x:Name="DlgCancel" Style="{StaticResource Ghost}" FontSize="13" Height="36" Padding="20,0" Margin="0,0,10,0"/>
+              <Button x:Name="DlgOk" Style="{StaticResource GoldButton}" FontSize="14" Height="36" Padding="24,0"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </Grid>
     </Grid>
-  </Grid>
+  </Viewbox>
 </Window>

@@ -9,7 +9,8 @@ if (-not (Test-Path "assets\app.ico")) { & "$PSScriptRoot\tools\make-icon.ps1" |
 $refs = @(
     "$fw\WPF\PresentationFramework.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\WindowsBase.dll",
     "$fw\System.Xaml.dll", "$fw\System.dll", "$fw\System.Core.dll",
-    "$fw\System.IO.Compression.dll", "$fw\System.IO.Compression.FileSystem.dll", "$fw\System.Web.Extensions.dll"
+    "$fw\System.IO.Compression.dll", "$fw\System.IO.Compression.FileSystem.dll", "$fw\System.Web.Extensions.dll",
+    "$fw\System.Windows.Forms.dll"
 ) | ForEach-Object { "/r:$_" }
 
 & "$fw\csc.exe" /nologo /target:winexe /optimize+ /platform:anycpu "/out:$out" `
@@ -17,6 +18,7 @@ $refs = @(
     /resource:src\MainWindow.xaml,MainWindow.xaml `
     /resource:assets\background.jpg,background.jpg `
     /resource:assets\Cinzel.ttf,Cinzel.ttf `
+    /resource:catalog.json,catalog.json `
     $(Get-ChildItem assets\locale\*.json | ForEach-Object { "/resource:assets\locale\$($_.Name),locale.$($_.Name)" }) `
     $refs src\*.cs
 if ($LASTEXITCODE -ne 0) { throw "compilation échouée" }

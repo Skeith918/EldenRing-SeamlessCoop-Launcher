@@ -1,0 +1,197 @@
+{
+  "schema": 1,
+  "updated": "2026-10-27",
+  "mods": [
+    {
+      "id": "seamless-coop",
+      "name": "Seamless Co-op",
+      "author": "Yui",
+      "category": "multiplayer",
+      "core": true,
+      "gameplay": true,
+      "nexus": 510,
+      "description": {
+        "fr": "Coopération sans coupure : explorez tout le jeu à plusieurs, boss compris, avec des invasions et des règles de difficulté réglables.",
+        "en": "Seamless co-op: explore the whole game together, bosses included, with configurable invasions and difficulty scaling.",
+        "es": "Cooperativo sin cortes: explora todo el juego en compañía, jefes incluidos, con invasiones y dificultad configurables."
+      },
+      "source": { "type": "github", "repo": "yuiamoroll/EldenRingSeamlessCoopRelease", "asset": "\\.zip$" },
+      "games": ["2.7.*"],
+      "natives": ["SeamlessCoop/ersc.dll"],
+      "special": "seamless",
+      "settings": {
+        "file": "SeamlessCoop/ersc_settings.ini",
+        "format": "ini",
+        "tabs": [
+          {
+            "title": { "fr": "SESSION", "en": "SESSION", "es": "SESIÓN" },
+            "items": [
+              { "key": "cooppassword", "section": "PASSWORD", "type": "text", "maxLength": 64, "default": "",
+                "label": { "fr": "Mot de passe de session", "en": "Session password", "es": "Contraseña de sesión" },
+                "hint": { "fr": "Le même pour tous les joueurs du groupe", "en": "Must be the same for every player in the group", "es": "La misma para todos los jugadores del grupo" },
+                "placeholder": { "fr": "Choisis un mot de passe…", "en": "Pick a password…", "es": "Elige una contraseña…" } },
+              { "key": "allow_invaders", "section": "GAMEPLAY", "type": "toggle", "default": "1",
+                "label": { "fr": "Envahisseurs", "en": "Invaders", "es": "Invasores" },
+                "hint": { "fr": "D'autres joueurs peuvent envahir votre monde", "en": "Other players can invade your world", "es": "Otros jugadores pueden invadir tu mundo" } },
+              { "key": "death_debuffs", "section": "GAMEPLAY", "type": "toggle", "default": "1",
+                "label": { "fr": "Malus à la mort", "en": "Death debuffs", "es": "Penalización al morir" },
+                "hint": { "fr": "Essence de putréfaction, soignée au site de grâce", "en": "Rot Essence, cured at a Site of Grace", "es": "Esencia de podredumbre, se cura en un lugar de gracia" } },
+              { "key": "allow_summons", "section": "GAMEPLAY", "type": "toggle", "default": "1",
+                "label": { "fr": "Invocations d'esprits", "en": "Spirit summons", "es": "Invocación de espíritus" },
+                "hint": { "fr": "Cendres d'esprit utilisables en coop", "en": "Spirit Ashes usable in co-op", "es": "Cenizas espirituales disponibles en cooperativo" } },
+              { "key": "always_spectate_on_death", "section": "GAMEPLAY", "type": "toggle", "default": "0",
+                "label": { "fr": "Toujours observer à la mort", "en": "Always spectate on death", "es": "Observar siempre al morir" },
+                "hint": { "fr": "Spectateur jusqu'au wipe ou au repos", "en": "Spectate until party wipe or a rest", "es": "Espectador hasta la derrota del grupo o un descanso" } },
+              { "key": "overhead_player_display", "section": "GAMEPLAY", "type": "choice", "default": "0",
+                "label": { "fr": "Infos des joueurs", "en": "Player info", "es": "Info de jugadores" },
+                "choices": [
+                  { "fr": "Normal", "en": "Normal", "es": "Normal" },
+                  { "fr": "Rien", "en": "None", "es": "Nada" },
+                  { "fr": "Ping", "en": "Ping", "es": "Ping" },
+                  { "fr": "Niveau", "en": "Level", "es": "Nivel" },
+                  { "fr": "Morts", "en": "Deaths", "es": "Muertes" },
+                  { "fr": "Niveau + ping", "en": "Level + ping", "es": "Nivel + ping" }
+                ] },
+              { "key": "skip_splash_screens", "section": "GAMEPLAY", "type": "toggle", "default": "0",
+                "label": { "fr": "Passer les logos d'intro", "en": "Skip intro logos", "es": "Saltar logos de inicio" } },
+              { "key": "default_boot_master_volume", "section": "GAMEPLAY", "type": "slider", "min": 0, "max": 10, "step": 1, "default": "5",
+                "label": { "fr": "Volume au démarrage", "en": "Startup volume", "es": "Volumen al iniciar" },
+                "format": "{0} / 10",
+                "zero": { "fr": "muet", "en": "muted", "es": "silencio" } }
+            ]
+          },
+          {
+            "title": { "fr": "DIFFICULTÉ", "en": "DIFFICULTY", "es": "DIFICULTAD" },
+            "reset": true,
+            "items": [
+              { "type": "note",
+                "label": { "fr": "Bonus ajouté par joueur supplémentaire dans la session.", "en": "Bonus added for each extra player in the session.", "es": "Bonificación por cada jugador adicional en la sesión." } },
+              { "key": "enemy_health_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 200, "step": 5, "default": "35",
+                "label": { "fr": "PV des ennemis", "en": "Enemy health", "es": "Vida de enemigos" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } },
+              { "key": "enemy_damage_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 200, "step": 5, "default": "0",
+                "label": { "fr": "Dégâts des ennemis", "en": "Enemy damage", "es": "Daño de enemigos" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } },
+              { "key": "enemy_posture_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 200, "step": 5, "default": "15",
+                "label": { "fr": "Posture des ennemis", "en": "Enemy posture", "es": "Postura de enemigos" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } },
+              { "key": "boss_health_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 300, "step": 5, "default": "100",
+                "label": { "fr": "PV des boss", "en": "Boss health", "es": "Vida de jefes" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } },
+              { "key": "boss_damage_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 200, "step": 5, "default": "0",
+                "label": { "fr": "Dégâts des boss", "en": "Boss damage", "es": "Daño de jefes" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } },
+              { "key": "boss_posture_scaling", "section": "SCALING", "type": "slider", "min": 0, "max": 200, "step": 5, "default": "20",
+                "label": { "fr": "Posture des boss", "en": "Boss posture", "es": "Postura de jefes" }, "format": { "fr": "+{0} %", "en": "+{0}%", "es": "+{0} %" } }
+            ]
+          },
+          {
+            "title": { "fr": "AVANCÉ", "en": "ADVANCED", "es": "AVANZADO" },
+            "items": [
+              { "key": "save_file_extension", "section": "SAVE", "type": "text", "maxLength": 120, "default": "co2", "sanitize": "alnum", "placeholder": "co2",
+                "label": { "fr": "Extension des sauvegardes Seamless", "en": "Seamless save file extension", "es": "Extensión de las partidas Seamless" },
+                "hint": { "fr": "Tes sauvegardes vanilla (.sl2) ne sont jamais modifiées", "en": "Your vanilla saves (.sl2) are never modified", "es": "Tus partidas vanilla (.sl2) nunca se modifican" } },
+              { "key": "append_steam_id_to_players", "section": "GAMEPLAY", "type": "toggle", "default": "0",
+                "label": { "fr": "Afficher le Steam ID des joueurs", "en": "Show players' Steam ID", "es": "Mostrar el Steam ID de los jugadores" },
+                "hint": { "fr": "Utile pour repérer et bloquer un tricheur", "en": "Handy to spot and block a cheater", "es": "Útil para detectar y bloquear a un tramposo" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "unlock-the-fps",
+      "name": "Unlock the FPS",
+      "author": "techiew",
+      "category": "qol",
+      "version": "2022-05",
+      "nexus": 216,
+      "description": {
+        "fr": "Retire la limite de 60 images par seconde.",
+        "en": "Removes the 60 FPS cap.",
+        "es": "Elimina el límite de 60 FPS."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^UnlockTheFps\\.zip$",
+                  "sha256": "116a523d858ab76ed38ca8a918c1f1e393d646f4d632ea2f692a614524b86a51" },
+      "games": [],
+      "natives": ["mods/UnlockTheFps.dll"],
+      "deploy": [{ "from": "mods/UnlockTheFps", "to": "mods/UnlockTheFps" }],
+      "conflicts": [],
+      "settings": {
+        "file": "mods/UnlockTheFps/config.ini",
+        "tabs": [
+          {
+            "title": { "fr": "FPS", "en": "FPS", "es": "FPS" },
+            "items": [
+              { "key": "limit", "section": "unlockthefps", "type": "slider", "min": 30, "max": 360, "step": 5, "default": "300",
+                "label": { "fr": "Limite d'images par seconde", "en": "Frame rate limit", "es": "Límite de FPS" },
+                "hint": { "fr": "Le jeu est bloqué à 60 d'origine", "en": "The game is capped at 60 by default", "es": "El juego está limitado a 60 de serie" },
+                "format": "{0} FPS" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "adjust-the-fov",
+      "name": "Adjust the FoV",
+      "author": "techiew",
+      "category": "qol",
+      "version": "2022-05",
+      "nexus": 325,
+      "description": {
+        "fr": "Règle le champ de vision de la caméra.",
+        "en": "Adjusts the camera field of view.",
+        "es": "Ajusta el campo de visión de la cámara."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^AdjustTheFov\\.zip$",
+                  "sha256": "339a27e94780c1550380d0fbc81026265da0539f95cfd004b012ec5c99c8323b" },
+      "games": [],
+      "natives": ["mods/AdjustTheFov.dll"],
+      "deploy": [{ "from": "mods/AdjustTheFov", "to": "mods/AdjustTheFov" }],
+      "settings": {
+        "file": "mods/AdjustTheFov/config.ini",
+        "tabs": [
+          {
+            "title": { "fr": "CAMÉRA", "en": "CAMERA", "es": "CÁMARA" },
+            "items": [
+              { "key": "value", "section": "fov", "type": "slider", "min": 30, "max": 110, "step": 1, "default": "48",
+                "label": { "fr": "Champ de vision", "en": "Field of view", "es": "Campo de visión" },
+                "hint": { "fr": "48° = valeur d'origine du jeu", "en": "48° = the game's default", "es": "48° = valor original del juego" },
+                "format": "{0}°" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "remove-chromatic-aberration",
+      "name": "Remove Chromatic Aberration",
+      "author": "techiew",
+      "category": "graphics",
+      "version": "2022-05",
+      "nexus": 179,
+      "description": {
+        "fr": "Supprime l'aberration chromatique (franges colorées sur les bords de l'image).",
+        "en": "Removes chromatic aberration (colour fringing at the edges of the screen).",
+        "es": "Elimina la aberración cromática (bordes de color en los extremos de la imagen)."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^RemoveChromaticAberration\\.zip$",
+                  "sha256": "2b9725dbc9c0825bb7f366bc8d01e659d62db4bc12d89ceb4d55287a3c23d13f" },
+      "games": [],
+      "natives": ["mods/RemoveChromaticAberration.dll"]
+    },
+    {
+      "id": "remove-vignette",
+      "name": "Remove Vignette",
+      "author": "techiew",
+      "category": "graphics",
+      "version": "2022-05",
+      "nexus": 177,
+      "description": {
+        "fr": "Supprime l'assombrissement des coins de l'écran.",
+        "en": "Removes the darkened screen corners (vignette).",
+        "es": "Elimina el oscurecimiento de las esquinas de la pantalla."
+      },
+      "source": { "type": "github", "repo": "techiew/EldenRingMods", "tag": "Binaries", "asset": "^RemoveVignette\\.zip$",
+                  "sha256": "cdd9a3faf127d7f6fdf57e0e3772d1e849603b2c20ad32a41b8883fb6e3600d6" },
+      "games": [],
+      "natives": ["mods/RemoveVignette.dll"]
+    }
+  ]
+}
