@@ -7,15 +7,15 @@ using System.Windows;
 [assembly: AssemblyTitle("Elden Ring Seamless Co-op Launcher")]
 [assembly: AssemblyDescription("Installe, configure et lance Seamless Co-op pour Elden Ring")]
 [assembly: AssemblyProduct("ER Seamless Launcher")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace ERSeamless
 {
     public static class Program
     {
-        public const string Version = "2.0";
+        public const string Version = "2.1";
 
         public static WebClient Web()
         {
