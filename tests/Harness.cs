@@ -101,6 +101,7 @@ static class Harness
         var cat = Catalog.Embedded();
         var seam = cat.Find(Seamless.Id);
         Check(cat.Mods.Count == 11 && seam != null && seam.Core && cat.Mods[0] == seam, "catalogue embarqué : 11 mods, Seamless en tête");
+        Check(!seam.Source.IsGitHub && seam.Nexus == 510, "Seamless : Nexus seule source (« nexusOnly » l'emporte sur la source GitHub gardée pour les launchers v2.0)");
         Check(seam.Settings != null && seam.Settings.Tabs.Count == 3 && seam.Settings.Items.Count() == 16, "réglages Seamless : 3 onglets, 16 clés");
         Check(CatalogMod.VersionMatch("2.7.*", "2.7.2") && !CatalogMod.VersionMatch("2.7.*", "2.8.0") && CatalogMod.VersionMatch("*", "1.0.0")
               && CatalogMod.VersionMatch("2.7.2", "2.7.2") && !CatalogMod.VersionMatch("2.7", "2.7.2"), "comparaison de versions");
@@ -122,6 +123,41 @@ static class Harness
         var remote = Catalog.FetchRemote().Result;
         Console.WriteLine("  catalogue distant : " + (remote == null ? "absent (normal tant que la branche n'est pas fusionnée)" : remote.Updated));
 
+        Console.WriteLine("== Remplacement d'un dossier de mod");
+        string swapTo = Path.Combine(root, "swap", "mod"), swapFrom = Path.Combine(root, "swap", "new");
+        Directory.CreateDirectory(swapTo);
+        Directory.CreateDirectory(swapFrom);
+        File.WriteAllText(Path.Combine(swapTo, "a.dll"), "ancien");
+        File.WriteAllText(Path.Combine(swapFrom, "a.dll"), "nouveau");
+        bool swapFailed = false;
+        using (File.Open(Path.Combine(swapFrom, "a.dll"), FileMode.Open, FileAccess.Read, FileShare.None)) // fichier tenu ouvert, comme par un antivirus
+            try { Files.Swap(swapFrom, swapTo); }
+            catch (Exception) { swapFailed = true; }
+        Check(swapFailed && File.ReadAllText(Path.Combine(swapTo, "a.dll")) == "ancien" && !Directory.Exists(swapTo + ".old"), "déplacement bloqué : erreur remontée, ancienne version remise en place");
+        Files.Swap(swapFrom, swapTo);
+        Check(File.ReadAllText(Path.Combine(swapTo, "a.dll")) == "nouveau" && !Directory.Exists(swapFrom) && !Directory.Exists(swapTo + ".old"), "déplacement réussi : nouvelle version en place, ancienne supprimée");
+
+        Console.WriteLine("== Téléchargements surveillés après une page Nexus");
+        var dl = Path.Combine(root, "downloads");
+        Directory.CreateDirectory(dl);
+        var got = new List<string>();
+        var dlZip = Path.Combine(dl, "Seamless Co-op v99.zip");
+        using (var watch = new DownloadWatch(dl, p => { var empty = new FileInfo(p).Length == 0; lock (got) got.Add(empty ? "vide : " + p : p); }) { Until = DateTime.Now.AddMinutes(1) })
+        {
+            File.WriteAllText(Path.Combine(dl, "notes.txt"), "x");
+            File.WriteAllText(dlZip, ""); // comme Firefox : zip vide posé d'avance, contenu écrit à côté puis renommé
+            File.Copy(Zip("dl.zip", "SeamlessCoop/ersc.dll=x"), dlZip + ".part");
+            System.Threading.Thread.Sleep(1500);
+            File.Delete(dlZip);
+            File.Move(dlZip + ".part", dlZip);
+            for (int i = 0; i < 20 && got.Count == 0; i++) System.Threading.Thread.Sleep(500);
+            System.Threading.Thread.Sleep(1500); // un éventuel second signalement aurait le temps d'arriver
+            watch.Until = DateTime.Now.AddSeconds(-1);
+            File.Copy(Zip("late.zip", "a.txt=b"), Path.Combine(dl, "late.zip"));
+            System.Threading.Thread.Sleep(1500);
+        }
+        lock (got) Check(got.Count == 1 && got[0] == dlZip, "zip signalé une seule fois, une fois complet ; autres fichiers et zip arrivé après la fenêtre ignorés");
+
         Console.WriteLine("== Réglages : reprise de l'ancienne installation");
         Directory.CreateDirectory(Path.Combine(game, "SeamlessCoop"));
         File.WriteAllText(Path.Combine(game, "SeamlessCoop", "ersc_settings.ini"), "[PASSWORD]\r\ncooppassword = ancien\r\n[SCALING]\r\nboss_health_scaling = 150\r\n");
@@ -130,6 +166,8 @@ static class Harness
         Check(vals["cooppassword"] == "ancien" && vals["boss_health_scaling"] == "150" && vals["allow_invaders"] == "1", "valeurs v1.0 reprises, défauts du schéma pour le reste");
 
         Console.WriteLine("== Installation depuis GitHub");
+        // le launcher ne prend Seamless que sur Nexus ; le banc d'essai télécharge quand même le miroir GitHub pour avoir un vrai mod
+        seam.Source = new ModSource { Type = "github", Repo = "yuiamoroll/EldenRingSeamlessCoopRelease", Asset = @"\.zip$" };
         var store = ModStore.Load();
         var s = Installer.InstallCatalogMod(seam, store, null).Result;
         Check(File.Exists(Path.Combine(s.Dir, "SeamlessCoop", "ersc.dll")) && store.Mods[0] == s && s.Tag.StartsWith("v"), "Seamless " + s.Tag + " installé dans le dossier du launcher");
@@ -173,6 +211,20 @@ static class Harness
         var schema = SettingsSchema.FromIni("mods/Foo/config.ini", "; vitesse du jeu\n[foo]\nenabled = 1\nspeed = 2.5");
         Check(schema != null && schema.Items.First().Type == "toggle" && schema.Items.Last().Type == "text" && Json.Loc(schema.Items.Last().Hint) == null
               && Json.Loc(SettingsSchema.FromIni("x.ini", "[a]\n; aide\nk = 1").Items.First().Hint) == "aide", "réglages déduits d'un .ini quelconque");
+
+        Console.WriteLine("== Mon catalogue");
+        var mine = Catalog.Embedded().WithUserMods();
+        var perso = mine.AddUserMod(new NexusMod { Id = 4242, Name = "Mod Perso", Author = "moi", Summary = "essai", Version = "1.0" }, store);
+        var linked = mine.AddUserMod(new NexusMod { Id = 1234, Name = "Malenia HD (Nexus)", Author = "x", Summary = "", Version = "2.0" }, store);
+        var dupe = mine.AddUserMod(new NexusMod { Id = 510, Name = "Seamless copie", Author = "x", Summary = "", Version = "9.0" }, store);
+        var again = Catalog.Embedded().WithUserMods();
+        Check(again.FindNexus(4242) != null && again.FindNexus(4242).User && again.FindNexus(4242).AutoLayout && !again.FindNexus(4242).Supports(gv)
+              && again.Mods.Count(c => c.Nexus == 510) == 1 && !again.Find(Seamless.Id).User,
+              "mod ajouté à mon catalogue : gardé au prochain lancement, non vérifié, sans jamais remplacer une entrée du catalogue officiel");
+        Check(linked.Id == tex.Id && again.Find(tex.Id).User, "mod déjà importé pour ce numéro Nexus : relié à son entrée");
+        Check(Installer.Recognize("Mod Perso 4242 1.0 2026-10-24T17-45Z abc.zip", again, new ModAnalysis()) == again.FindNexus(4242), "zip Nexus d'un mod de mon catalogue reconnu à l'import");
+        foreach (var x in new[] { perso, linked, dupe }) mine.RemoveUserMod(x);
+        Check(Catalog.Embedded().WithUserMods().Mods.Count == 11, "retirés de mon catalogue : seul le catalogue officiel reste");
 
         Console.WriteLine("== Profil me3");
         var profile = File.ReadAllText(Me3.WriteProfile(store, "test"));
@@ -249,6 +301,14 @@ static class Harness
               && Versions.Compare("Binaries", "2022-05") == null, "comparaison de numéros de version");
         Check(Versions.FromFileName("Seamless Co-op v2.0.2.zip") == "v2.0.2" && Versions.FromFileName("Seamless.Co-op.v1.9.8-510-1-9-8-1776128433.zip") == "v1.9.8"
               && Versions.FromFileName("Malenia HD.zip") == null, "version lue dans le nom de l'archive (ancien et nouveau nommage Nexus)");
+        // vrais noms de téléchargements Nexus (octobre 2026), dont un doublon renommé par le navigateur
+        string nxSeamless = "Seamless Co-op v2.0.2 510 2.0.2 2026-10-27T14-30Z gn8dtBhTy.zip", nxMap = "Map for Goblins Expanded v1.4.2 7156 1.4.2 2026-10-24T17-45Z UAfVnoxRX (1).zip",
+               nxPlain = "Some Mod 1234 3.1 2026-10-24T17-45Z AbC123.zip";
+        Check(Installer.NexusIdFromFileName(nxSeamless) == 510 && Installer.NexusIdFromFileName(nxMap) == 7156 && Installer.NexusIdFromFileName(nxPlain) == 1234
+              && Installer.CleanName(nxSeamless) == "Seamless Co-op v2.0.2" && Installer.CleanName(nxPlain) == "Some Mod"
+              && Versions.FromFileName(nxMap) == "v1.4.2" && Versions.FromFileName(nxPlain) == "v3.1"
+              && Installer.NexusIdFromFileName("Seamless.Co-op.v1.9.8-510-1-9-8-1776128433.zip") == 510 && Installer.NexusIdFromFileName("Malenia HD.zip") == 0,
+              "nommage Nexus actuel « Nom <id> <version> <date> <code> » : numéro du mod, nom propre et version lus");
         var live = Nexus.LatestVersions(new[] { 510 }).Result;
         var liveSeamless = live.ContainsKey(510) ? live[510] : null;
         Check(Versions.Compare(liveSeamless, "1.0") > 0, "version de Seamless sur Nexus lue sans compte : " + liveSeamless + " (GitHub : " + s.Tag + ")");
@@ -261,8 +321,8 @@ static class Harness
         var imp = Installer.Import(seamlessZip("Seamless Co-op v99.0.zip"), cat, store, out an);
         Check(imp.Id == Seamless.Id && imp.Version == "v99.0" && imp.Source == "nexus" && store.Mods.Count(x => x.Id == Seamless.Id) == 1,
               "zip Nexus au nouveau nommage (« Seamless Co-op v99.0.zip ») reconnu par son contenu, sans doublon");
-        Check(Ini.Load(Path.Combine(imp.Dir, "SeamlessCoop", "ersc_settings.ini")).Values()["cooppassword"] == pwd && File.Exists(Path.Combine(imp.Dir, "SeamlessCoop", "locale", "french.json")),
-              "Seamless importé : mot de passe conservé, traductions générées");
+        Check(Ini.Load(Path.Combine(imp.Dir, "SeamlessCoop", "ersc_settings.ini")).Values()["cooppassword"] == pwd && !File.Exists(Path.Combine(imp.Dir, "SeamlessCoop", "locale", "french.json")),
+              "Seamless importé : mot de passe conservé, textes anglais non traduits : aucune langue écrite, le mod reste en anglais");
         Check(!Installer.FindUpdates(cat, store).Result.Any(u => u.Key.Id == Seamless.Id), "version importée plus récente que GitHub : jamais remplacée par une plus ancienne");
         Installer.Import(seamlessZip("Seamless Co-op v1.0.zip"), cat, store, out an);
         Check(Installer.FindUpdates(cat, store).Result.Any(u => u.Key.Id == Seamless.Id), "version importée plus ancienne : mise à jour GitHub proposée");
@@ -304,6 +364,11 @@ static class Harness
         var flcToggle = FindAll<CheckBox>(Find<StackPanel>(win, "InstalledList")).FirstOrDefault(c => FindAncestorText(c).Contains(flcCard));
         Check(flcToggle != null && !flcToggle.IsEnabled && FindAncestorText(flcToggle).Contains("Bloqué par Fix the Camera"),
               "onglet Installés : Free Lock-On Camera verrouillé, « Bloqué par Fix the Camera » + raison");
+        var reinstallBtns = FindAll<Button>(Find<StackPanel>(win, "InstalledList")).Where(b => (b.Content as string) == "Réinstaller").ToList();
+        Check(reinstallBtns.Any(b => FindAncestorText(b).Contains("Fix the Camera " + mFix.Version)) && !reinstallBtns.Any(b => FindAncestorText(b).Contains("Unlock the FPS"))
+              && !reinstallBtns.Any(b => FindAncestorText(b).Contains("Seamless Co-op")) && !reinstallBtns.Any(b => FindAncestorText(b).Contains(reg.Name))
+              && (string)Find<Button>(win, "CheckUpdatesBtn").Content == "Vérifier les mises à jour",
+              "« Réinstaller » sur les mods GitHub seulement (pas Seamless, ni un mod importé depuis Nexus ou à la main), « Vérifier les mises à jour » affiché");
         var installedScroll = Find<ScrollViewer>(win, "InstalledScroll");
         installedScroll.ScrollToVerticalOffset(flcToggle == null ? 0 : flcToggle.TranslatePoint(new Point(0, 0), Find<StackPanel>(win, "InstalledList")).Y - 120);
         Pump(0.3);
@@ -331,6 +396,40 @@ static class Harness
         Pump(3); // vignettes
         Check(Find<StackPanel>(win, "DiscoverList").Children.Count >= 5, "onglet Découvrir : mods Nexus populaires affichés");
         Render(Find<FrameworkElement>(win, "Root"), "ui_mods_discover.png");
+        var addBtn = FindAll<Button>(Find<StackPanel>(win, "DiscoverList")).FirstOrDefault(b => (b.Content as string) == "Ajouter à mon catalogue");
+        var addedName = addBtn == null ? "" : FindAll<TextBlock>((DependencyObject)VisualTreeHelper.GetParent(VisualTreeHelper.GetParent(addBtn))).First().Text;
+        if (addBtn != null) { Click(addBtn); Pump(0.5); }
+        Check(addBtn != null && FindAll<TextBlock>(Find<StackPanel>(win, "DiscoverList")).Any(t => t.Text == "Mon catalogue"), "Découvrir : « " + addedName + " » ajouté à mon catalogue, badge affiché");
+        Find<RadioButton>(win, "SubCatalog").IsChecked = true;
+        Pump(0.5);
+        var removeBtn = FindAll<Button>(Find<StackPanel>(win, "CatalogList")).FirstOrDefault(b => (b.Content as string) == "Retirer de mon catalogue");
+        if (removeBtn != null) Find<ScrollViewer>(win, "CatalogScroll").ScrollToVerticalOffset(removeBtn.TranslatePoint(new Point(0, 0), Find<StackPanel>(win, "CatalogList")).Y - 200);
+        Pump(0.3);
+        Render(Find<FrameworkElement>(win, "Root"), "ui_my_catalog.png");
+        if (removeBtn != null) { Click(removeBtn); Pump(0.5); }
+        Check(removeBtn != null && !FindAll<Button>(Find<StackPanel>(win, "CatalogList")).Any(b => (b.Content as string) == "Retirer de mon catalogue"),
+              "onglet Catalogue : mod de mon catalogue listé avec « Retirer », puis retiré");
+        Find<RadioButton>(win, "SubDiscover").IsChecked = true;
+        Pump(0.3);
+        Action closeDialog = () => // « Plus tard » quand il existe : rien n'est installé
+        {
+            var cancel = Find<Button>(win, "DlgCancel");
+            Click(cancel.Visibility == Visibility.Visible ? cancel : Find<Button>(win, "DlgOk"));
+            Pump(0.3);
+        };
+        if (Find<Grid>(win, "Overlay").Visibility == Visibility.Visible) closeDialog();
+        OnUi(win, () => Click(Find<Button>(win, "CheckUpdatesBtn")));
+        var checkWait = System.Diagnostics.Stopwatch.StartNew();
+        while (Find<Grid>(win, "Overlay").Visibility != Visibility.Visible && checkWait.Elapsed.TotalSeconds < 45) Pump(0.5);
+        var checkText = Find<TextBlock>(win, "DlgText").Text;
+        var checkTitle = Find<TextBlock>(win, "DlgTitle").Text;
+        Check(Find<Grid>(win, "Overlay").Visibility == Visibility.Visible
+              && ((checkTitle == "Mises à jour" && (checkText == "Tout est à jour." || checkText.StartsWith("Mises à jour disponibles :\n• ")))
+                  || (checkTitle == "Mise à jour de Seamless Co-op" && checkText.Contains("est disponible sur Nexus"))), // version Nexus à télécharger
+              "« Vérifier les mises à jour » : résultat affiché (" + checkText.Replace("\n", " ") + ")");
+        Render(Find<FrameworkElement>(win, "Root"), "ui_check_updates.png");
+        closeDialog();
+        if (Find<Grid>(win, "Overlay").Visibility == Visibility.Visible) closeDialog(); // avis Nexus éventuel
         win.Close();
 
         Console.WriteLine("== Installer un mod incompatible depuis le catalogue (interface en espagnol)");

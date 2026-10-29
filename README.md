@@ -21,13 +21,13 @@ L'exe n'est pas signé, donc Windows SmartScreen peut afficher « Windows a prot
 - **Page Mods** :
   - **Catalogue** : les mods vérifiés du fichier [`catalog.json`](catalog.json) de ce dépôt, séparés entre « compatibles avec ta version » et « non vérifiés ». Il contient Seamless Co-op, 9 mods DLL installables en un clic (FPS, champ de vision, caméra, aberration chromatique, vignette, distance d'animation, ultra-large, perte de runes, verrouillage libre) et Map for Goblins Expanded (Nexus) ;
   - **Installés** : activer ou désactiver, ordre de chargement, réglages, « Testé OK », désinstaller ;
-  - **Découvrir** : recherche parmi les mods Nexus, sans compte et sans contenu adulte. Un mod Nexus se télécharge sur leur site, puis s'ajoute avec « Importer un .zip » ou « Importer un dossier ».
+  - **Découvrir** : recherche parmi les mods Nexus, sans compte et sans contenu adulte. Un mod Nexus se télécharge sur leur site : après un clic sur « Page Nexus », le launcher surveille ton dossier Téléchargements pendant 15 minutes et propose d'importer le `.zip` dès qu'il arrive. Sinon, il s'ajoute avec « Importer un .zip » ou « Importer un dossier ». « Ajouter à mon catalogue » le garde dans l'onglet Catalogue (non vérifié) : il est reconnu à l'import et ses nouvelles versions Nexus sont signalées.
 - **Compatibilité avec le jeu** : après une mise à jour du jeu, les mods qui ne sont pas vérifiés pour la nouvelle version sont désactivés automatiquement, pour éviter les plantages.
 - **Compatibilité entre mods** : deux mods vraiment incompatibles ne peuvent pas être activés ensemble. Quand l'un est actif, l'interrupteur de l'autre est verrouillé et la raison est affichée. Sont concernés :
   - les incompatibilités vérifiées et déclarées dans le catalogue ;
   - deux mods qui remplacent les mêmes fichiers du jeu, détectés automatiquement (deux `regulation.bin`, deux textures de Malenia…).
 - **Mises à jour automatiques** des mods hébergés sur GitHub et de me3, avec vérification SHA-256 et conservation de tes réglages.
-  - Le dépôt GitHub de Seamless n'est qu'un miroir de Nexus, parfois publié avec quelques jours de retard. Quand une version sort d'abord sur Nexus, le launcher le signale : on peut alors attendre, ou importer le `.zip` de Nexus.
+  - **Seamless vient uniquement de Nexus**, où il sort en premier (son dépôt GitHub n'est qu'un miroir publié avec quelques jours de retard). Le launcher signale chaque nouvelle version sur Nexus ; une fois le `.zip` téléchargé, il propose de l'installer.
   - Un mod importé depuis Nexus reste suivi : il ne sera jamais remplacé par une version GitHub plus ancienne.
 - **Réglages de chaque mod** depuis le launcher : ceux de Seamless sur la page Jouer, ceux des autres mods dans leur fenêtre « Réglages ». Ils sont décrits dans le catalogue, ou déduits automatiquement du `.ini` du mod.
 - **Import intelligent** : il repère les DLL, les dossiers de fichiers du jeu (`regulation.bin`, `chr/`, `parts/`…) et la config des mods « Elden Mod Loader ». Il ignore le vieux chargeur `dinput8.dll`, puisque me3 le remplace.
@@ -35,7 +35,7 @@ L'exe n'est pas signé, donc Windows SmartScreen peut afficher « Windows a prot
   - ta progression vanilla est copiée vers Seamless à la 1re installation ;
   - une copie de sécurité est faite avant chaque partie (les 10 dernières sont gardées) ;
   - le `.sl2` vanilla n'est jamais modifié.
-- **Trois langues** (français, anglais, espagnol), y compris les traductions du mod Seamless lui-même.
+- **Trois langues** (français, anglais, espagnol), y compris les traductions du mod Seamless lui-même. Une langue n'est installée dans le mod que si sa traduction est complète pour la version de Seamless installée ; sinon le mod reste en anglais.
 
 ## Bon à savoir
 

@@ -17,6 +17,13 @@ namespace ERSeamless
     {
         public const string Version = "2.0";
 
+        public static WebClient Web()
+        {
+            var wc = new WebClient { Encoding = System.Text.Encoding.UTF8 };
+            wc.Headers[HttpRequestHeader.UserAgent] = "ERSeamlessLauncher/" + Version;
+            return wc;
+        }
+
         [STAThread]
         public static int Main(string[] args)
         {

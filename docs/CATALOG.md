@@ -25,6 +25,7 @@ Le launcher télécharge [`catalog.json`](../catalog.json) depuis la branche `ma
 | `version` | Version affichée (facultatif). Par défaut, c'est le tag de la release GitHub. |
 | `nexus` | Numéro du mod sur Nexus. Il sert au lien vers la page et à reconnaître un `.zip` téléchargé depuis Nexus. |
 | `source` | D'où vient le mod (voir ci-dessous). |
+| `nexusOnly` | `true` : le mod ne vient **que** de Nexus, même si `source` désigne GitHub. Le launcher ne le télécharge ni ne le met à jour depuis GitHub ; il signale les nouvelles versions de Nexus et importe le `.zip` téléchargé. `source` reste lu par les launchers v2.0, qui ignorent ce champ. Utilisé pour Seamless, dont GitHub n'est qu'un miroir en retard. |
 | `games` | **Versions de `eldenring.exe` sur lesquelles le mod a été testé**, ex. `["2.7.2"]` ou `["2.7.*"]`. Une liste vide `[]` veut dire « non vérifié ». |
 | `natives` | DLL à charger, avec des chemins relatifs à la racine de l'archive (ex. `SeamlessCoop/ersc.dll`). |
 | `packages` | Dossiers qui remplacent des fichiers du jeu (`regulation.bin`, `chr/`, `parts/`…). `""` désigne toute l'archive. |

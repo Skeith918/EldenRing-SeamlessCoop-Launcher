@@ -57,6 +57,8 @@ namespace ERSeamless
         List<KeyValuePair<InstalledMod, CatalogMod>> pendingUpdates = new List<KeyValuePair<InstalledMod, CatalogMod>>();
         Dictionary<string, List<ModConflict>> conflicts = new Dictionary<string, List<ModConflict>>(StringComparer.OrdinalIgnoreCase);
         Dictionary<int, string> nexusVersions = new Dictionary<int, string>();
+        List<NexusMod> discoverResults; // dernière recherche Nexus réussie (null si elle a échoué)
+        DownloadWatch downloads;
         bool busy, discoverLoaded, suppressToggle;
         TaskCompletionSource<bool> dialog;
         Form seamlessForm, sheetForm;
@@ -70,7 +72,7 @@ namespace ERSeamless
         readonly TextBlock Title, Subtitle, Tagline, Caption, LblGame, LblMods, LblEngine, LangCode, GameText, ModsText, EngineText, SteamText,
                            StatusText, DlgTitle, DlgText, ModsInfo, SearchPh, DiscoverHint, SheetTitle;
         readonly Ellipse GameDot, ModsDot, EngineDot, SteamDot;
-        readonly Button MainBtn, UpdateBtn, BrowseBtn, ManageBtn, LangBtn, MinBtn, CloseBtn, DlgOk, DlgCancel, ImportZipBtn, ImportDirBtn, SearchBtn, SheetClose;
+        readonly Button MainBtn, UpdateBtn, BrowseBtn, ManageBtn, LangBtn, MinBtn, CloseBtn, DlgOk, DlgCancel, ImportZipBtn, ImportDirBtn, CheckUpdatesBtn, SearchBtn, SheetClose;
         readonly ProgressBar Progress;
         readonly RadioButton NavPlay, NavMods, SubCatalog, SubInstalled, SubDiscover;
         readonly UniformGrid PanelTabs, SheetTabs;
@@ -96,7 +98,7 @@ namespace ERSeamless
             GameDot = F<Ellipse>("GameDot"); ModsDot = F<Ellipse>("ModsDot"); EngineDot = F<Ellipse>("EngineDot"); SteamDot = F<Ellipse>("SteamDot");
             MainBtn = F<Button>("MainBtn"); UpdateBtn = F<Button>("UpdateBtn"); BrowseBtn = F<Button>("BrowseBtn"); ManageBtn = F<Button>("ManageBtn");
             LangBtn = F<Button>("LangBtn"); MinBtn = F<Button>("MinBtn"); CloseBtn = F<Button>("CloseBtn"); DlgOk = F<Button>("DlgOk"); DlgCancel = F<Button>("DlgCancel");
-            ImportZipBtn = F<Button>("ImportZipBtn"); ImportDirBtn = F<Button>("ImportDirBtn"); SearchBtn = F<Button>("SearchBtn"); SheetClose = F<Button>("SheetClose");
+            ImportZipBtn = F<Button>("ImportZipBtn"); ImportDirBtn = F<Button>("ImportDirBtn"); CheckUpdatesBtn = F<Button>("CheckUpdatesBtn"); SearchBtn = F<Button>("SearchBtn"); SheetClose = F<Button>("SheetClose");
             Progress = F<ProgressBar>("Progress");
             NavPlay = F<RadioButton>("NavPlay"); NavMods = F<RadioButton>("NavMods");
             SubCatalog = F<RadioButton>("SubCatalog"); SubInstalled = F<RadioButton>("SubInstalled"); SubDiscover = F<RadioButton>("SubDiscover");
@@ -108,7 +110,7 @@ namespace ERSeamless
             state = State.Load();
             L.Set(state.Get("language")); // rien d'enregistré : langue de Windows
             store = ModStore.Load();
-            catalog = Catalog.LoadLocal();
+            catalog = Catalog.LoadLocal().WithUserMods();
             InitChrome();
             InitFont();
             InitBackground();
@@ -271,6 +273,7 @@ namespace ERSeamless
             UpdateBtn.Click += async (s, e) => await ApplyUpdates();
             ImportZipBtn.Click += async (s, e) => await ImportZip();
             ImportDirBtn.Click += async (s, e) => await ImportFolder();
+            CheckUpdatesBtn.Click += async (s, e) => await CheckForUpdates();
             SearchBtn.Click += async (s, e) => await Discover(SearchBox.Text);
             SearchBox.TextChanged += (s, e) => SearchPh.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Hidden;
             SearchBox.KeyDown += async (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; await Discover(SearchBox.Text); } };
@@ -296,6 +299,7 @@ namespace ERSeamless
                     if (sheetForm != null) ModSettings.Save(sheetForm.ModId, sheetMod, sheetForm.Schema, sheetForm.Values);
                 }
                 catch (Exception ex) { Log.Write("save on close: " + ex.Message); }
+                if (downloads != null) downloads.Dispose();
             };
         }
 
@@ -313,23 +317,28 @@ namespace ERSeamless
 
         async Task Startup()
         {
+            // lancés tout de suite : ils avancent pendant les éventuelles fenêtres de patch et de nettoyage
+            var remoteCheck = Catalog.FetchRemote();
+            var me3Check = Me3.Latest();
             await CheckGameVersion();
             await OfferLegacyCleanup();
 
-            var remote = await Catalog.FetchRemote();
+            var remote = await remoteCheck;
             if (remote != null && Catalog.Newest(catalog, remote) == remote && remote.Updated != catalog.Updated)
             {
                 SaveSeamless();
-                catalog = remote;
+                catalog = remote.WithUserMods();
                 BuildSeamlessPanel();
                 RebuildModLists();
             }
+            var updatesCheck = Installer.FindUpdates(catalog, store);
+            var nexusCheck = Nexus.LatestVersions(catalog.Mods.Select(c => c.Nexus));
             await EnforceConflicts(null);
 
-            try { me3Latest = await Me3.Latest(); }
+            try { me3Latest = await me3Check; }
             catch (Exception ex) { Log.Write("me3 check: " + ex.Message); }
-            pendingUpdates = await Installer.FindUpdates(catalog, store);
-            try { nexusVersions = await Nexus.LatestVersions(catalog.Mods.Select(c => c.Nexus)); }
+            pendingUpdates = await updatesCheck;
+            try { nexusVersions = await nexusCheck; }
             catch (Exception ex) { Log.Write("nexus versions: " + ex.Message); }
             if (!busy) { RebuildModLists(); RefreshStatus(); }
             if (state.GetBool("auto_update", true) && UpdateCount() > 0 && !Game.IsRunning()) await ApplyUpdates();
@@ -351,18 +360,29 @@ namespace ERSeamless
             return string.IsNullOrEmpty(v) || !char.IsDigit(v[0]) ? v : "v" + v;
         }
 
-        /// <summary>Une fois par version : une mise à jour est sortie sur Nexus mais pas encore sur GitHub, d'où le launcher l'installe.</summary>
-        async Task NotifyNexusAhead()
+        /// <summary>
+        /// Une mise à jour est sortie sur Nexus : à télécharger soi-même (mod Nexus), ou pas encore sur GitHub d'où le launcher
+        /// l'installe. Une fois par version, sauf si force (vérification demandée par le joueur).
+        /// </summary>
+        async Task NotifyNexusAhead(bool force = false)
         {
             foreach (var a in NexusAhead())
             {
                 var key = "nexus_notified_" + a.Key.Id;
-                if (state.Get(key) == a.Value || pendingUpdates.Any(u => u.Key == a.Key)) continue;
+                if ((!force && state.Get(key) == a.Value) || pendingUpdates.Any(u => u.Key == a.Key)) continue;
                 state.Set(key, a.Value);
                 state.Save();
-                if (await Ask(L.F("nexus_ahead_title", a.Key.Name), L.F("nexus_ahead_text", a.Key.Name, Ver(a.Value), Ver(a.Key.Version)), L.T("nexus_ahead_open"), L.T("later")))
-                    OpenUrl(catalog.Find(a.Key.Id).NexusPage);
+                var cm = catalog.Find(a.Key.Id);
+                var text = cm.Source.IsGitHub ? "nexus_ahead_text" : "nexus_only_text";
+                if (await Ask(L.F("nexus_ahead_title", a.Key.Name), L.F(text, a.Key.Name, Ver(a.Value), Ver(a.Key.Version)), L.T("nexus_ahead_open"), L.T("later")))
+                    OpenUrl(cm.NexusPage);
             }
+        }
+
+        /// <summary>Infobulle d'une version plus récente sur Nexus : elle arrivera par GitHub, ou il faut la télécharger.</summary>
+        static string NexusTip(CatalogMod cm)
+        {
+            return L.T(cm != null && cm.Source.IsGitHub ? "nexus_newer_tip" : "nexus_only_tip");
         }
 
         bool Me3Outdated()
@@ -432,6 +452,7 @@ namespace ERSeamless
             ManageBtn.Content = L.T("manage");
             ImportZipBtn.Content = L.T("import_zip");
             ImportDirBtn.Content = L.T("import_dir");
+            CheckUpdatesBtn.Content = L.T("btn_check_updates");
             SearchBtn.Content = L.T("search_btn");
             SearchPh.Text = L.T("search_placeholder");
             DiscoverHint.Text = L.T("discover_hint");
@@ -445,7 +466,8 @@ namespace ERSeamless
                 SheetTitle.Text = L.F("settings_of", sheetMod.Name);
                 BuildForm(sheetForm, SheetTabs, SheetPages, null);
             }
-            if (discoverLoaded) { var t = Discover(SearchBox.Text); }
+            if (discoverResults != null) ShowDiscover(); // mêmes résultats, nouvelle langue : pas de nouvelle requête
+            else if (discoverLoaded) { var t = Discover(SearchBox.Text); }
         }
 
         void OpenLanguageMenu()
@@ -819,6 +841,7 @@ namespace ERSeamless
 
         void RebuildModLists()
         {
+            if (ModsPage.Visibility != Visibility.Visible) return; // ShowPage reconstruit la page à son ouverture
             conflicts = Conflicts.Compute(store, catalog);
             var gv = gameVersion ?? "?";
             ModsInfo.Text = gameVersion != null ? L.F("mods_info", gameVersion) : "";
@@ -888,12 +911,12 @@ namespace ERSeamless
             return t == k ? L.T("category_other") : t;
         }
 
-        /// <summary>Version plus récente publiée sur Nexus mais pas encore sur GitHub.</summary>
-        Border NexusBadge(string version)
+        /// <summary>Version plus récente publiée sur Nexus que celle installée.</summary>
+        Border NexusBadge(string version, CatalogMod cm)
         {
             if (version == null) return null;
             var b = Badge(L.F("badge_nexus_newer", Ver(version)), "warn");
-            b.ToolTip = new TextBlock { Text = L.T("nexus_newer_tip"), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
+            b.ToolTip = new TextBlock { Text = NexusTip(cm), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
             return b;
         }
 
@@ -987,7 +1010,8 @@ namespace ERSeamless
             if (m == null && active.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(active.Select(c => c.Id))), "bad", tip);
             else if (declared.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(declared.Select(c => c.Id))), "muted", tip);
             var newer = m == null ? null : NexusNewer(m);
-            info.Children.Add(Head(cm.Name, Badge(CategoryName(cm.Category), "muted"), CompatBadge(cm, m), gameplay, incompatible, NexusBadge(newer)));
+            var kind = cm.User ? Badge(L.T("badge_my_catalog"), "muted") : Badge(CategoryName(cm.Category), "muted");
+            info.Children.Add(Head(cm.Name, kind, CompatBadge(cm, m), gameplay, incompatible, NexusBadge(newer, cm)));
             var sub = L.F("by_author", cm.Author) + (cm.Version != null ? " · " + cm.Version : "") + " · " + L.T(cm.Source.IsGitHub ? "source_github" : "source_nexus");
             info.Children.Add(new TextBlock { Text = sub, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 0, 0) });
             var desc = Json.Loc(cm.Description);
@@ -1014,6 +1038,7 @@ namespace ERSeamless
                 if (!cm.Source.IsGitHub && m == null) nb.ToolTip = L.T("nexus_manual_tip");
                 actions.Children.Add(nb);
             }
+            if (cm.User) actions.Children.Add(ActionButton(L.T("btn_remove_my_catalog"), new Thickness(8, 0, 0, 0), () => RemoveFromMyCatalog(cm)));
             return Card(TwoColumns(info, actions));
         }
 
@@ -1059,12 +1084,8 @@ namespace ERSeamless
             if (blockers.Count > 0) incompatible = ConflictBadge(L.F("badge_blocked_by", ConflictNames(blockers.Select(c => c.With))), "bad", ConflictDetails(blockers));
             else if (partners.Count > 0) incompatible = ConflictBadge(L.F("badge_incompatible", ConflictNames(partners.Select(c => c.With))), "muted", ConflictDetails(partners));
             var newer = NexusNewer(m);
-            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted"), incompatible, NexusBadge(newer)));
-            var parts = new List<string>();
-            if (m.Natives.Count > 0) parts.Add(L.F("n_dlls", m.Natives.Count));
-            if (m.Packages.Count > 0) parts.Add(L.F("n_packages", m.Packages.Count));
-            if (m.Deploy.Count > 0) parts.Add(L.T("has_deploy"));
-            var details = (m.Author.Length > 0 ? L.F("by_author", m.Author) + " · " : "") + string.Join(" · ", parts);
+            info.Children.Add(Head(m.Name, m.Version.Length > 0 ? Badge(m.Version, "muted") : null, CompatBadge(cm, m), Badge(L.T(src), "muted"), incompatible, NexusBadge(newer, cm)));
+            var details = (m.Author.Length > 0 ? L.F("by_author", m.Author) + " · " : "") + Contents(m);
             info.Children.Add(new TextBlock { Text = details, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 3, 0, 0), TextWrapping = TextWrapping.Wrap });
             if (blockers.Count > 0)
                 info.Children.Add(new TextBlock { Text = ConflictDetails(blockers), FontSize = 12, Foreground = B("Bad"), Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
@@ -1075,38 +1096,56 @@ namespace ERSeamless
             if (newer != null && cm != null)
             {
                 var nb = ActionButton(L.T("btn_nexus_page"), new Thickness(0, 0, 8, 0), () => OpenUrl(cm.NexusPage));
-                nb.ToolTip = L.T("nexus_newer_tip");
+                nb.ToolTip = NexusTip(cm);
                 actions.Children.Add(nb);
             }
             if (m.Id == Seamless.Id || SchemaFor(m) != null)
                 actions.Children.Add(ActionButton(L.T("btn_settings"), new Thickness(0, 0, 8, 0), () => OpenSheet(m)));
             if (!Compatible(m) && gameVersion != null)
                 actions.Children.Add(ActionButton(L.T("btn_mark_tested"), new Thickness(0, 0, 8, 0), () => MarkTested(m)));
+            // seulement si le launcher sait le retélécharger : un mod importé depuis Nexus pourrait revenir à une version GitHub plus ancienne
+            if (cm != null && cm.Source.IsGitHub && m.Source == "github")
+                actions.Children.Add(ActionButton(L.T("btn_reinstall_mod"), new Thickness(0, 0, 8, 0), async () => await ReinstallMod(m, cm)));
             actions.Children.Add(ActionButton(L.T("btn_uninstall_mod"), new Thickness(0), async () => await UninstallMod(m)));
             Grid.SetColumn(actions, 3);
             g.Children.Add(actions);
             return Card(g);
         }
 
+        /// <summary>« 2 DLL · 1 pack · fichiers copiés dans le jeu ».</summary>
+        static string Contents(InstalledMod m)
+        {
+            var parts = new List<string>();
+            if (m.Natives.Count > 0) parts.Add(L.F("n_dlls", m.Natives.Count));
+            if (m.Packages.Count > 0) parts.Add(L.F("n_packages", m.Packages.Count));
+            if (m.Deploy.Count > 0) parts.Add(L.T("has_deploy"));
+            return string.Join(" · ", parts);
+        }
+
+        /// <summary>Remet l'interrupteur sur value sans relancer SetEnabled.</summary>
+        void Revert(CheckBox cb, bool value)
+        {
+            suppressToggle = true;
+            cb.IsChecked = value;
+            suppressToggle = false;
+        }
+
         async Task SetEnabled(InstalledMod m, bool enable, CheckBox cb)
         {
             if (suppressToggle || m.Enabled == enable) return;
-            if (busy)
-            {
-                suppressToggle = true; cb.IsChecked = m.Enabled; suppressToggle = false;
-                return;
-            }
-            var blockers = enable ? Conflicts.Blockers(Conflicts.Compute(store, catalog), store, m) : new List<ModConflict>();
+            if (busy) { Revert(cb, m.Enabled); return; }
+            // conflicts a été calculé en même temps que cette carte : la liste des mods installés n'a pas changé depuis
+            var blockers = enable ? Conflicts.Blockers(conflicts, store, m) : new List<ModConflict>();
             if (blockers.Count > 0)
             {
-                suppressToggle = true; cb.IsChecked = false; suppressToggle = false;
+                Revert(cb, false);
                 await Alert(L.T("conflict_title"), L.F("enable_blocked_text", m.Name, ConflictNames(blockers.Select(c => c.With)), ConflictDetails(blockers)));
                 return;
             }
             if (enable && !Compatible(m) &&
                 !await Ask(L.T("enable_unverified_title"), L.F("enable_unverified_text", m.Name, gameVersion ?? "?"), L.T("enable_anyway"), L.T("cancel")))
             {
-                suppressToggle = true; cb.IsChecked = false; suppressToggle = false;
+                Revert(cb, false);
                 return;
             }
             m.Enabled = enable;
@@ -1132,13 +1171,27 @@ namespace ERSeamless
             RefreshStatus();
         }
 
+        /// <summary>Vrai, après l'avoir expliqué, si le jeu tourne : on ne touche pas aux mods pendant une partie.</summary>
+        async Task<bool> GameBlocksInstall()
+        {
+            if (!Game.IsRunning()) return false;
+            await Alert(L.T("game_running_title"), L.T("game_running_install"));
+            return true;
+        }
+
+        /// <summary>Affiche label avec la barre à 0 % et renvoie le suivi de progression du téléchargement (« label  42 % »).</summary>
+        Action<int> Downloading(string label)
+        {
+            Status(label, 0);
+            return p => Status(label + "  " + p + " %", p);
+        }
+
         async Task InstallMod(CatalogMod cm)
         {
-            if (Game.IsRunning()) { await Alert(L.T("game_running_title"), L.T("game_running_install")); return; }
+            if (await GameBlocksInstall()) return;
             var ok = await Run(L.T("install_failed_title"), async () =>
             {
-                Status(L.F("installing_mod", cm.Name), 0);
-                await Installer.InstallCatalogMod(cm, store, p => Status(L.F("installing_mod", cm.Name) + "  " + p + " %", p));
+                await Installer.InstallCatalogMod(cm, store, Downloading(L.F("installing_mod", cm.Name)));
                 pendingUpdates.RemoveAll(u => u.Key.Id == cm.Id);
                 Status(L.F("installed_mod", cm.Name), double.NaN);
             });
@@ -1152,9 +1205,43 @@ namespace ERSeamless
                 await Alert(L.F("installed_mod", cm.Name), L.F("installed_unverified", cm.Name, gameVersion ?? "?"));
         }
 
+        /// <summary>Retélécharge le mod et remplace ses fichiers (abîmés, ou en partie supprimés par l'antivirus) ; réglages conservés.</summary>
+        async Task ReinstallMod(InstalledMod m, CatalogMod cm)
+        {
+            if (!await Ask(L.F("reinstall_mod_title", m.Name), L.T("reinstall_mod_text"), L.T("btn_reinstall_mod"), L.T("cancel"))) return;
+            await InstallMod(cm);
+        }
+
+        /// <summary>Vérification à la demande : relit les releases GitHub (le cache de la session est vidé) et la version Nexus.</summary>
+        async Task CheckForUpdates()
+        {
+            GitHub.ClearCache();
+            var ok = await Run(L.T("check_updates_failed"), async () =>
+            {
+                Status(L.T("checking_updates"), -1);
+                var me3Check = Me3.Latest();
+                var updatesCheck = Installer.FindUpdates(catalog, store);
+                var nexusCheck = Nexus.LatestVersions(catalog.Mods.Select(c => c.Nexus));
+                me3Latest = await me3Check; // une erreur réseau ici est affichée : pas de « tout est à jour » hors ligne
+                pendingUpdates = await updatesCheck;
+                try { nexusVersions = await nexusCheck; }
+                catch (Exception ex) { Log.Write("nexus versions: " + ex.Message); }
+                Status("", double.NaN);
+            });
+            RebuildModLists();
+            RefreshStatus();
+            if (!ok) return;
+            var names = pendingUpdates.Select(u => u.Key.Name).ToList();
+            if (Me3Outdated()) names.Insert(0, "me3 " + me3Latest.Tag);
+            if (names.Count == 0 && NexusAhead().Count == 0) await Alert(L.T("updates_title"), L.T("updates_done"));
+            else if (names.Count > 0 && await Ask(L.T("updates_title"), L.F("updates_found", string.Join("\n", names.Select(n => "• " + n))), L.T("btn_update_mod"), L.T("later")))
+                await ApplyUpdates();
+            await NotifyNexusAhead(true); // versions à prendre sur Nexus, même déjà signalées
+        }
+
         async Task UninstallMod(InstalledMod m)
         {
-            if (Game.IsRunning()) { await Alert(L.T("game_running_title"), L.T("game_running_install")); return; }
+            if (await GameBlocksInstall()) return;
             if (!await Ask(L.F("uninstall_mod_title", m.Name), L.T("uninstall_mod_text"), L.T("btn_uninstall_mod"), L.T("cancel"))) return;
             if (m.Deployed.Count > 0 && !await EnsureWritable()) return;
             if (m.Id == Seamless.Id) SaveSeamless();
@@ -1178,7 +1265,7 @@ namespace ERSeamless
 
         async Task ImportPath(string path)
         {
-            if (Game.IsRunning()) { await Alert(L.T("game_running_title"), L.T("game_running_install")); return; }
+            if (await GameBlocksInstall()) return;
             InstalledMod m = null;
             ModAnalysis an = null;
             var ok = await Run(L.T("import_mod_failed"), async () =>
@@ -1196,11 +1283,7 @@ namespace ERSeamless
             RefreshStatus();
             if (!ok) return;
             SubInstalled.IsChecked = true;
-            var parts = new List<string>();
-            if (m.Natives.Count > 0) parts.Add(L.F("n_dlls", m.Natives.Count));
-            if (m.Packages.Count > 0) parts.Add(L.F("n_packages", m.Packages.Count));
-            if (m.Deploy.Count > 0) parts.Add(L.T("has_deploy"));
-            var msg = L.F("import_mod_done", m.Name, string.Join(" · ", parts));
+            var msg = L.F("import_mod_done", m.Name, Contents(m));
             if (m.FromCatalog) msg += "\n\n" + L.F("import_catalog_note", m.Name);
             else msg += "\n\n" + L.T("import_unverified_note");
             if (an != null && an.LoaderIgnored) msg += "\n\n" + L.T("import_loader_ignored");
@@ -1216,10 +1299,17 @@ namespace ERSeamless
             string err = null;
             try { results = await Nexus.Search(text, 30); }
             catch (Exception ex) { err = ex.Message; Log.Write("nexus: " + ex.Message); }
+            discoverResults = results;
             DiscoverList.Children.Clear();
             if (err != null) { DiscoverList.Children.Add(Hint(L.F("search_failed", err), new Thickness(0))); return; }
-            if (results.Count == 0) { DiscoverList.Children.Add(Hint(L.T("search_none"), new Thickness(0))); return; }
-            foreach (var n in results) DiscoverList.Children.Add(DiscoverCard(n));
+            ShowDiscover();
+        }
+
+        void ShowDiscover()
+        {
+            DiscoverList.Children.Clear();
+            if (discoverResults.Count == 0) { DiscoverList.Children.Add(Hint(L.T("search_none"), new Thickness(0))); return; }
+            foreach (var n in discoverResults) DiscoverList.Children.Add(DiscoverCard(n));
         }
 
         FrameworkElement DiscoverCard(NexusMod n)
@@ -1245,9 +1335,9 @@ namespace ERSeamless
             }
             g.Children.Add(thumb);
 
-            var inCatalog = catalog.FindNexus(n.Id) != null;
+            var entry = catalog.FindNexus(n.Id);
             var info = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
-            info.Children.Add(Head(n.Name, inCatalog ? Badge(L.T("badge_in_catalog"), "ok") : Badge(L.T("badge_unverified"), "warn")));
+            info.Children.Add(Head(n.Name, entry == null ? Badge(L.T("badge_unverified"), "warn") : entry.User ? Badge(L.T("badge_my_catalog"), "muted") : Badge(L.T("badge_in_catalog"), "ok")));
             DateTime updated;
             var date = DateTime.TryParse(n.Updated, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out updated) ? updated.ToString("d", L.Culture) : "";
             var sub = L.F("by_author", n.Author) + " · ♥ " + n.Endorsements.ToString("N0", L.Culture) + (date.Length > 0 ? " · " + L.F("updated_on", date) : "") + (n.Version.Length > 0 ? " · " + n.Version : "");
@@ -1256,12 +1346,39 @@ namespace ERSeamless
             Grid.SetColumn(info, 1);
             g.Children.Add(info);
 
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (entry == null)
+            {
+                var add = ActionButton(L.T("btn_add_my_catalog"), new Thickness(0, 0, 8, 0), () => AddToMyCatalog(n));
+                add.ToolTip = new TextBlock { Text = L.T("add_my_catalog_tip"), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
+                actions.Children.Add(add);
+            }
             var open = ActionButton(L.T("btn_nexus_page"), new Thickness(0), () => OpenUrl(n.Page));
-            open.VerticalAlignment = VerticalAlignment.Center;
             open.ToolTip = L.T("nexus_manual_tip");
-            Grid.SetColumn(open, 2);
-            g.Children.Add(open);
+            actions.Children.Add(open);
+            Grid.SetColumn(actions, 2);
+            g.Children.Add(actions);
             return Card(g);
+        }
+
+        void AddToMyCatalog(NexusMod n)
+        {
+            try { catalog.AddUserMod(n, store); }
+            catch (Exception ex) { Log.Write("my catalog add: " + ex.Message); Status(Friendly(ex), double.NaN); return; }
+            if (n.Version.Length > 0) nexusVersions[n.Id] = n.Version; // ses mises à jour Nexus sont suivies sans attendre le prochain démarrage
+            Status(L.F("my_catalog_added", n.Name), double.NaN);
+            ShowDiscover();
+            RebuildModLists();
+            RefreshStatus();
+        }
+
+        void RemoveFromMyCatalog(CatalogMod cm)
+        {
+            try { catalog.RemoveUserMod(cm); }
+            catch (Exception ex) { Log.Write("my catalog remove: " + ex.Message); Status(Friendly(ex), double.NaN); return; }
+            if (discoverResults != null) ShowDiscover();
+            RebuildModLists();
+            RefreshStatus();
         }
 
         // ───────────────────────── état ─────────────────────────
@@ -1297,7 +1414,7 @@ namespace ERSeamless
             }
             var tips = new List<string>();
             if (unverified.Count > 0) tips.Add(L.F("unverified_tip", gameVersion ?? "?", string.Join(", ", unverified)));
-            if (ahead.Count > 0) tips.Add(L.T("nexus_newer_tip"));
+            if (ahead.Count > 0) tips.Add(NexusTip(catalog.Find(ahead[0].Key.Id)));
             ModsText.ToolTip = tips.Count > 0 ? string.Join("\n\n", tips) : null;
 
             if (Engine == "classic")
@@ -1307,8 +1424,9 @@ namespace ERSeamless
                     L.F("engine_me3_status", Me3.InstalledVersion() ?? "") + (Me3Outdated() ? L.F("engine_me3_update", me3Latest.Tag) : ""));
             else Row(EngineDot, EngineText, "Gold", L.T("engine_missing"));
 
-            if (Steam.Ready()) Row(SteamDot, SteamText, "Ok", L.T("steam_ok"));
-            else if (Steam.Exe() != null) Row(SteamDot, SteamText, "Gold", L.T(Steam.IsRunning() ? "steam_waiting" : "steam_autostart"));
+            bool steamRunning = Steam.IsRunning(); // une seule énumération des processus : appelé à chaque retour sur la fenêtre
+            if (steamRunning && Steam.IsLoggedIn()) Row(SteamDot, SteamText, "Ok", L.T("steam_ok"));
+            else if (Steam.Exe() != null) Row(SteamDot, SteamText, "Gold", L.T(steamRunning ? "steam_waiting" : "steam_autostart"));
             else Row(SteamDot, SteamText, "Bad", L.T("not_found"));
 
             MainBtn.Content = L.T(!gameOk ? "btn_locate_game" : NeedsBase() ? "btn_install" : "btn_play");
@@ -1404,35 +1522,39 @@ namespace ERSeamless
         /// <summary>Installe ce qui manque pour jouer : me3 et, au tout premier lancement, Seamless Co-op.</summary>
         async Task<bool> EnsureBase(bool forPlay)
         {
-            if (Game.IsRunning()) { await Alert(L.T("game_running_title"), L.T("game_running_install")); return false; }
+            if (await GameBlocksInstall()) return false;
             var seamlessEntry = catalog.Find(Seamless.Id);
             bool needMe3 = Engine == "me3" && !Me3.IsInstalled;
             bool needSeamless = store.Mods.Count == 0 && seamlessEntry != null;
-            if (!needMe3 && !needSeamless) return true;
+            bool seamlessOnNexus = needSeamless && !seamlessEntry.Source.IsGitHub; // à télécharger soi-même, le launcher l'importe ensuite
+            if (seamlessOnNexus) needSeamless = false;
+            if (!needMe3 && !needSeamless && !seamlessOnNexus) return true;
             SaveSeamless();
-            var ok = await Run(L.T("install_failed_title"), async () =>
-            {
-                if (needMe3)
+            bool ok = true;
+            if (needMe3 || needSeamless)
+                ok = await Run(L.T("install_failed_title"), async () =>
                 {
-                    var rel = me3Latest ?? await Me3.Latest();
-                    me3Latest = rel;
-                    var label = L.F("downloading", "me3 " + rel.Tag);
-                    Status(label, 0);
-                    await Me3.Install(rel, p => Status(label + "  " + p + " %", p));
-                }
-                if (needSeamless)
-                {
-                    var label = L.F("downloading", "Seamless Co-op");
-                    Status(label, 0);
-                    await Installer.InstallCatalogMod(seamlessEntry, store, p => Status(label + "  " + p + " %", p));
-                }
-                Status(L.T("base_installed"), double.NaN);
-            });
+                    if (needMe3)
+                    {
+                        var rel = me3Latest ?? await Me3.Latest();
+                        me3Latest = rel;
+                        await Me3.Install(rel, Downloading(L.F("downloading", "me3 " + rel.Tag)));
+                    }
+                    if (needSeamless)
+                        await Installer.InstallCatalogMod(seamlessEntry, store, Downloading(L.F("downloading", "Seamless Co-op")));
+                    Status(L.T("base_installed"), double.NaN);
+                });
             if (needSeamless && ok) AfterSeamlessInstalled();
             RebuildModLists();
             RefreshStatus();
             if (!ok) return false;
             if (needSeamless) await OfferLegacyCleanup();
+            if (seamlessOnNexus)
+            {
+                if (await Ask(L.T("seamless_nexus_title"), L.T("seamless_nexus_text"), L.T("nexus_ahead_open"), L.T("later")))
+                    OpenUrl(seamlessEntry.NexusPage);
+                return false; // rien à lancer tant que Seamless n'est pas importé
+            }
             if (!forPlay)
             {
                 var msg = L.T("base_installed");
@@ -1467,22 +1589,15 @@ namespace ERSeamless
 
         async Task ApplyUpdates()
         {
-            if (Game.IsRunning()) return;
+            if (await GameBlocksInstall()) return;
             bool seamlessUpdated = pendingUpdates.Any(u => u.Key.Id == Seamless.Id);
             if (seamlessUpdated) SaveSeamless();
             await Run(L.T("update_failed_title"), async () =>
             {
-                if (Me3Outdated())
-                {
-                    var label = L.F("updating", "me3 " + me3Latest.Tag);
-                    Status(label, 0);
-                    await Me3.Install(me3Latest, p => Status(label + "  " + p + " %", p));
-                }
+                if (Me3Outdated()) await Me3.Install(me3Latest, Downloading(L.F("updating", "me3 " + me3Latest.Tag)));
                 foreach (var u in pendingUpdates.ToList())
                 {
-                    var label = L.F("updating", u.Key.Name);
-                    Status(label, 0);
-                    await Installer.InstallCatalogMod(u.Value, store, p => Status(label + "  " + p + " %", p));
+                    await Installer.InstallCatalogMod(u.Value, store, Downloading(L.F("updating", u.Key.Name)));
                     pendingUpdates.Remove(u);
                 }
                 Status(L.T("updates_done"), double.NaN);
@@ -1633,11 +1748,33 @@ namespace ERSeamless
             using (Process.Start("explorer.exe", "\"" + dir + "\"")) { }
         }
 
-        static void OpenUrl(string url)
+        void OpenUrl(string url)
         {
             if (string.IsNullOrEmpty(url) || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
             try { using (Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })) { } }
             catch (Exception ex) { Log.Write("open url: " + ex.Message); }
+            if (new Uri(url).Host.EndsWith("nexusmods.com", StringComparison.OrdinalIgnoreCase)) WatchDownloads();
+        }
+
+        /// <summary>Après l'ouverture d'une page Nexus : pendant 15 min, un .zip qui arrive dans Téléchargements est proposé à l'import.</summary>
+        void WatchDownloads()
+        {
+            try
+            {
+                if (downloads == null)
+                    downloads = new DownloadWatch(Paths.Downloads, path => Window.Dispatcher.BeginInvoke(new Action(async () => await OfferDownloaded(path))));
+                downloads.Until = DateTime.Now.AddMinutes(15);
+            }
+            catch (Exception ex) { Log.Write("downloads watch: " + ex.Message); } // dossier introuvable : l'import manuel reste possible
+        }
+
+        async Task OfferDownloaded(string path)
+        {
+            while (busy || Overlay.Visibility == Visibility.Visible) await Task.Delay(500); // Ask fermerait la fenêtre déjà ouverte
+            if (Window.WindowState == WindowState.Minimized) Window.WindowState = WindowState.Normal;
+            Window.Activate(); // le joueur est dans son navigateur
+            if (await Ask(L.T("downloaded_title"), L.F("downloaded_text", Path.GetFileName(path)), L.T("import_ok"), L.T("ignore")))
+                await ImportPath(path);
         }
 
         void FocusPassword()

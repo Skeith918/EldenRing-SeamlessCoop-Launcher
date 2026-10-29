@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -27,6 +28,19 @@ namespace ERSeamless
         // modifiables pour les tests
         public static string AppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ERSeamlessLauncher");
         public static string SavesRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EldenRing");
+        public static string Downloads = KnownDownloads();
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out string path);
+
+        /// <summary>Dossier Téléchargements de Windows (il peut avoir été déplacé, d'où l'appel à Windows plutôt qu'un chemin fixe).</summary>
+        static string KnownDownloads()
+        {
+            string p;
+            try { if (SHGetKnownFolderPath(new Guid("374DE290-123F-4565-9164-39C4925E467B"), 0, IntPtr.Zero, out p) == 0) return p; }
+            catch { }
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        }
 
         public static string StateFile { get { return Path.Combine(AppData, "launcher.ini"); } }
         public static string LegacySettingsCopy { get { return Path.Combine(AppData, "ersc_settings.ini"); } } // launcher v1.0
@@ -37,6 +51,7 @@ namespace ERSeamless
         public static string ProfilesDir { get { return Path.Combine(AppData, "profiles"); } }
         public static string Me3Dir { get { return Path.Combine(AppData, "me3"); } }
         public static string CatalogCache { get { return Path.Combine(AppData, "catalog.json"); } }
+        public static string UserCatalog { get { return Path.Combine(AppData, "my-catalog.json"); } } // mods ajoutés depuis Découvrir
     }
 
     public static class Log
@@ -47,7 +62,12 @@ namespace ERSeamless
             {
                 Directory.CreateDirectory(Paths.AppData);
                 var fi = new FileInfo(Paths.LogFile);
-                if (fi.Exists && fi.Length > 256 * 1024) fi.Delete();
+                if (fi.Exists && fi.Length > 256 * 1024) // l'ancien journal est gardé à côté pour diagnostiquer
+                {
+                    var old = Path.Combine(Paths.AppData, "launcher.old.log");
+                    File.Delete(old);
+                    fi.MoveTo(old);
+                }
                 File.AppendAllText(Paths.LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + message + Environment.NewLine);
             }
             catch { }
@@ -399,6 +419,47 @@ namespace ERSeamless
             }
             catch (Exception ex) { Log.Write("grant: " + ex); return 1; }
         }
+    }
+
+    /// <summary>
+    /// Surveille un dossier jusqu'à Until : chaque nouveau .zip est signalé une seule fois, quand il est complet. Les navigateurs
+    /// écrivent d'abord ailleurs (« x.zip.crdownload », « x.zip.part », voire un « x.zip » vide) puis renomment à la fin.
+    /// </summary>
+    public class DownloadWatch : IDisposable
+    {
+        readonly FileSystemWatcher watcher;
+        readonly HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        readonly Action<string> found; // appelé hors du thread de l'interface
+        public DateTime Until;
+
+        public DownloadWatch(string dir, Action<string> found)
+        {
+            this.found = found;
+            watcher = new FileSystemWatcher(dir) { NotifyFilter = NotifyFilters.FileName };
+            watcher.Created += (s, e) => Seen(e.FullPath);
+            watcher.Renamed += (s, e) => Seen(e.FullPath);
+            watcher.EnableRaisingEvents = true;
+        }
+
+        void Seen(string path)
+        {
+            if (DateTime.Now > Until || !path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return;
+            lock (seen) if (!seen.Add(path)) return;
+            Task.Run(async () =>
+            {
+                for (int i = 0; i < 120; i++) // 2 min : un zip vide ou incomplet n'est pas encore lisible
+                {
+                    bool complete = false;
+                    try { using (ZipFile.OpenRead(path)) complete = true; }
+                    catch (Exception) { }
+                    if (complete) { found(path); return; }
+                    await Task.Delay(1000);
+                }
+                Log.Write("download never completed: " + path);
+            });
+        }
+
+        public void Dispose() { watcher.Dispose(); }
     }
 
     public static class Proc

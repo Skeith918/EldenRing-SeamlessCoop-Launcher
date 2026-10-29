@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-10-27",
+  "updated": "2026-10-29",
   "mods": [
     {
       "id": "seamless-coop",
@@ -10,6 +10,7 @@
       "core": true,
       "gameplay": true,
       "nexus": 510,
+      "nexusOnly": true,
       "description": {
         "fr": "Coopération sans coupure : explorez tout le jeu à plusieurs, boss compris, avec des invasions et des règles de difficulté réglables.",
         "en": "Seamless co-op: explore the whole game together, bosses included, with configurable invasions and difficulty scaling.",

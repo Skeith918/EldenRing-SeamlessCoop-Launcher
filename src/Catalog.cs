@@ -150,7 +150,7 @@ namespace ERSeamless
         public string[] Games = new string[0], Natives = new string[0], Packages = new string[0], Requires = new string[0];
         public List<CatalogConflict> Conflicts = new List<CatalogConflict>();
         public List<KeyValuePair<string, string>> Deploy = new List<KeyValuePair<string, string>>();
-        public bool Gameplay, Core;
+        public bool Gameplay, Core, User; // User : entrée de « mon catalogue », ajoutée depuis Découvrir
         public SettingsSchema Settings;
 
         public bool Supports(string gameVersion)
@@ -205,6 +205,8 @@ namespace ERSeamless
                 Core = Json.Bool(d, "core", false),
                 Settings = SettingsSchema.From(Json.Obj(d, "settings"))
             };
+            // jamais installé ni mis à jour depuis GitHub (Nexus publie avant) ; « source » reste pour les launchers v2.0 qui l'ignorent
+            if (Json.Bool(d, "nexusOnly", false)) m.Source = new ModSource { Type = "nexus" };
             foreach (var x in Json.List(d, "deploy"))
             {
                 var s = x as string;
@@ -284,6 +286,56 @@ namespace ERSeamless
             return Newest(embedded, cached);
         }
 
+        /// <summary>Ajoute les mods de « mon catalogue » absents du catalogue officiel (même id ou même numéro Nexus : l'officiel gagne).</summary>
+        public Catalog WithUserMods()
+        {
+            foreach (var m in UserEntries().Select(CatalogMod.From).Where(m => m != null))
+                if (Find(m.Id) == null && FindNexus(m.Nexus) == null) { m.User = true; Mods.Add(m); }
+            return this;
+        }
+
+        /// <summary>
+        /// Ajoute un mod Nexus à « mon catalogue » : non vérifié, il est reconnu à l'import et ses versions Nexus sont suivies.
+        /// Un mod déjà importé pour ce numéro Nexus garde son identifiant, pour être relié à son entrée.
+        /// </summary>
+        public CatalogMod AddUserMod(NexusMod n, ModStore store)
+        {
+            var installed = store.Mods.FirstOrDefault(x => x.Nexus == n.Id && Find(x.Id) == null);
+            var entry = new Dictionary<string, object>
+            {
+                { "id", installed != null ? installed.Id : "nexus-" + n.Id }, { "name", n.Name }, { "author", n.Author ?? "" },
+                { "description", n.Summary ?? "" }, { "nexus", n.Id }, { "source", new Dictionary<string, object> { { "type", "nexus" } } }
+            };
+            var entries = UserEntries();
+            entries.Add(entry);
+            SaveUserEntries(entries);
+            var cm = CatalogMod.From(entry);
+            cm.User = true;
+            Mods.Add(cm);
+            return cm;
+        }
+
+        public void RemoveUserMod(CatalogMod cm)
+        {
+            var entries = UserEntries();
+            entries.RemoveAll(e => string.Equals(Json.Str(e, "id"), cm.Id, StringComparison.OrdinalIgnoreCase));
+            SaveUserEntries(entries);
+            Mods.Remove(cm);
+        }
+
+        static List<Dictionary<string, object>> UserEntries()
+        {
+            try { if (File.Exists(Paths.UserCatalog)) return Json.Objs(Json.ParseObject(File.ReadAllText(Paths.UserCatalog, Encoding.UTF8)), "mods"); }
+            catch (Exception ex) { Log.Write("my catalog: " + ex.Message); }
+            return new List<Dictionary<string, object>>();
+        }
+
+        static void SaveUserEntries(List<Dictionary<string, object>> entries)
+        {
+            Directory.CreateDirectory(Paths.AppData);
+            File.WriteAllText(Paths.UserCatalog, Json.Write(new Dictionary<string, object> { { "schema", SupportedSchema }, { "mods", entries } }), new UTF8Encoding(false));
+        }
+
         public static Catalog Newest(Catalog a, Catalog b)
         {
             if (a == null) return b;
@@ -297,11 +349,8 @@ namespace ERSeamless
             try
             {
                 string json;
-                using (var wc = new WebClient { Encoding = Encoding.UTF8 })
-                {
-                    wc.Headers[HttpRequestHeader.UserAgent] = "ERSeamlessLauncher/" + Program.Version;
+                using (var wc = Program.Web())
                     json = await wc.DownloadStringTaskAsync(RemoteUrl + "?t=" + DateTime.UtcNow.Ticks);
-                }
                 var c = TryParse(json, "remote");
                 if (c != null)
                 {

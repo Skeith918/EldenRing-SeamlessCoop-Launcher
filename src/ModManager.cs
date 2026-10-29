@@ -163,6 +163,26 @@ namespace ERSeamless
             Directory.Delete(dir, true);
         }
 
+        /// <summary>
+        /// Remplace le dossier to par from. L'ancien dossier n'est supprimé qu'une fois le nouveau en place : si le déplacement
+        /// échoue (antivirus qui analyse un fichier extrait), l'ancienne version est remise et l'erreur remonte.
+        /// </summary>
+        public static void Swap(string from, string to)
+        {
+            var old = to.TrimEnd('\\') + ".old";
+            if (Directory.Exists(old)) DeleteDir(old); // reste d'un remplacement précédent
+            if (Directory.Exists(to)) Directory.Move(to, old);
+            try { Directory.Move(from, to); }
+            catch
+            {
+                try { if (Directory.Exists(old)) Directory.Move(old, to); }
+                catch (Exception ex) { Log.Write("swap restore " + to + ": " + ex.Message); }
+                throw;
+            }
+            try { DeleteDir(old); }
+            catch (Exception ex) { Log.Write("swap cleanup " + old + ": " + ex.Message); }
+        }
+
         public static void CleanTemp()
         {
             try { DeleteDir(Path.Combine(Paths.AppData, ".tmp")); } catch { }
@@ -221,20 +241,13 @@ namespace ERSeamless
             lock (cache) cache.Clear();
         }
 
-        static WebClient Client()
-        {
-            var wc = new WebClient { Encoding = Encoding.UTF8 };
-            wc.Headers[HttpRequestHeader.UserAgent] = "ERSeamlessLauncher/" + Program.Version;
-            return wc;
-        }
-
         /// <summary>Release d'un dépôt (dernière si tag est null). Mise en cache pour la session.</summary>
         public static async Task<Release> GetRelease(string repo, string tag)
         {
             var key = repo + "|" + (tag ?? "latest");
             lock (cache) if (cache.ContainsKey(key)) return cache[key];
             string json;
-            using (var wc = Client())
+            using (var wc = Program.Web())
             {
                 wc.Headers[HttpRequestHeader.Accept] = "application/vnd.github+json";
                 json = await wc.DownloadStringTaskAsync("https://api.github.com/repos/" + repo + "/releases/" + (tag == null ? "latest" : "tags/" + Uri.EscapeDataString(tag)));
@@ -265,7 +278,7 @@ namespace ERSeamless
             if (asset.Url == null || !new Uri(asset.Url).Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
                 throw new UserError(L.F("err_bad_host", asset.Url == null ? "?" : new Uri(asset.Url).Host));
             var path = Path.Combine(Files.TempDir(), Regex.Replace(asset.Name, @"[^\w\.\-]", "_"));
-            using (var wc = Client())
+            using (var wc = Program.Web())
             {
                 if (progress != null) wc.DownloadProgressChanged += (s, e) => progress(e.ProgressPercentage);
                 await wc.DownloadFileTaskAsync(new Uri(asset.Url), path);
@@ -317,10 +330,12 @@ namespace ERSeamless
             return 0;
         }
 
-        /// <summary>Version d'une archive : « Nom-510-2-0-2-1761575432 » (ancien nommage Nexus) ou « Seamless Co-op v2.0.2 ».</summary>
+        /// <summary>Version d'une archive : nommage Nexus actuel ou ancien (« Nom-510-2-0-2-1761575432 »), sinon « Seamless Co-op v2.0.2 ».</summary>
         public static string FromFileName(string file)
         {
             var name = Path.GetFileNameWithoutExtension((file ?? "").TrimEnd('\\')) ?? "";
+            var nx = Installer.NexusName.Match(name);
+            if (nx.Success) return "v" + nx.Groups[3].Value.TrimStart('v', 'V');
             var m = Regex.Match(name, @"-\d+-(\d+(?:-\d+)*)-\d{9,}$");
             if (m.Success) return "v" + m.Groups[1].Value.Replace('-', '.');
             m = Regex.Match(name, @"(?:^|[\s_\.\-])v(\d+(?:\.\d+)+)", RegexOptions.IgnoreCase);
@@ -368,9 +383,7 @@ namespace ERSeamless
                 await Task.Run(() =>
                 {
                     var dir = Files.ExtractToTemp(zip);
-                    foreach (var p in cm.Natives.Concat(cm.Deploy.Select(kv => kv.Key)))
-                        if (!File.Exists(Path.Combine(dir, Files.Native(p))) && !Directory.Exists(Path.Combine(dir, Files.Native(p))))
-                            throw new UserError(L.T("err_archive"));
+                    Require(dir, cm.Natives.Concat(cm.Deploy.Select(kv => kv.Key)), L.T("err_archive"));
                     Place(dir, m, cm.Settings);
                     if (cm.Natives.Any(p => !File.Exists(Path.Combine(m.Dir, Files.Native(p))))) throw new UserError(L.T("err_antivirus"));
                 });
@@ -398,6 +411,23 @@ namespace ERSeamless
             }
         }
 
+        /// <summary>Chaque chemin (fichier ou dossier) doit exister dans dir, sinon erreur affichée telle quelle.</summary>
+        static void Require(string dir, IEnumerable<string> rels, string error)
+        {
+            foreach (var p in rels)
+                if (!File.Exists(Path.Combine(dir, Files.Native(p))) && !Directory.Exists(Path.Combine(dir, Files.Native(p))))
+                    throw new UserError(error);
+        }
+
+        /// <summary>Disposition déduite de l'archive ; le fichier de réglages du catalogue reste prioritaire.</summary>
+        static void ApplyAnalysis(InstalledMod m, ModAnalysis a)
+        {
+            m.Natives = a.Natives;
+            m.Packages = a.Packages;
+            m.Deploy = a.Deploy;
+            if (m.SettingsFile == null) m.SettingsFile = a.SettingsFile;
+        }
+
         static void ApplyCatalog(InstalledMod m, CatalogMod cm)
         {
             m.Name = cm.Name;
@@ -421,8 +451,7 @@ namespace ERSeamless
                 if (old != null) previous = old.Values();
             }
             Directory.CreateDirectory(Paths.ModsRoot);
-            if (Directory.Exists(m.Dir)) Files.DeleteDir(m.Dir);
-            Directory.Move(dir, m.Dir);
+            Files.Swap(dir, m.Dir);
             if (settingsRel != null) ModSettings.Restore(m.Id, Path.Combine(m.Dir, Files.Native(settingsRel)), schema, previous);
         }
 
@@ -474,18 +503,27 @@ namespace ERSeamless
             return dir.Length == 0 ? name : dir + "/" + name;
         }
 
-        /// <summary>Nexus nomme ses téléchargements « Nom-&lt;modId&gt;-&lt;version&gt;-&lt;horodatage&gt;.zip ».</summary>
+        /// <summary>
+        /// Nommage actuel des téléchargements Nexus : « Nom &lt;modId&gt; &lt;version&gt; &lt;date&gt; &lt;code&gt;.zip »,
+        /// ex. « Seamless Co-op v2.0.2 510 2.0.2 2026-10-27T14-30Z gn8dtBhTy », avec « (1) » si le navigateur l'a déjà.
+        /// </summary>
+        internal static readonly Regex NexusName = new Regex(@"^(.+) (\d+) (\S+) \d{4}-\d{2}-\d{2}T[\d\-]+Z \S+?(?: \(\d+\))?$");
+
+        /// <summary>Numéro Nexus du mod : nommage actuel, ou ancien « Nom-&lt;modId&gt;-&lt;version&gt;-&lt;horodatage&gt;.zip ».</summary>
         public static int NexusIdFromFileName(string file)
         {
-            var m = Regex.Match(Path.GetFileNameWithoutExtension(file) ?? "", @"-(\d+)-[\d\-]*?-?\d{9,}$");
+            var name = Path.GetFileNameWithoutExtension(file) ?? "";
+            var m = NexusName.Match(name);
+            var digits = m.Success ? m.Groups[2].Value : Regex.Match(name, @"-(\d+)-[\d\-]*?-?\d{9,}$").Groups[1].Value;
             int id;
-            return m.Success && int.TryParse(m.Groups[1].Value, out id) ? id : 0;
+            return int.TryParse(digits, out id) ? id : 0;
         }
 
         public static string CleanName(string file)
         {
             var n = Path.GetFileNameWithoutExtension(file.TrimEnd('\\')) ?? "mod";
-            n = Regex.Replace(n, @"-\d+-[\d\-]*?-?\d{9,}$", "");
+            var m = NexusName.Match(n);
+            n = m.Success ? m.Groups[1].Value : Regex.Replace(n, @"-\d+-[\d\-]*?-?\d{9,}$", "");
             return n.Replace('_', ' ').Trim();
         }
 
@@ -541,18 +579,10 @@ namespace ERSeamless
                 {
                     m = store.Get(cm.Id) ?? new InstalledMod { Id = cm.Id };
                     if (cm.AutoLayout && analysis.Empty) throw new UserError(L.F("err_import_mismatch", cm.Name));
-                    foreach (var p in cm.Natives.Concat(cm.Packages).Concat(cm.Deploy.Select(kv => kv.Key)))
-                        if (!File.Exists(Path.Combine(dir, Files.Native(p))) && !Directory.Exists(Path.Combine(dir, Files.Native(p))))
-                            throw new UserError(L.F("err_import_mismatch", cm.Name));
+                    Require(dir, cm.Natives.Concat(cm.Packages).Concat(cm.Deploy.Select(kv => kv.Key)), L.F("err_import_mismatch", cm.Name));
                     Place(dir, m, cm.Settings);
                     ApplyCatalog(m, cm);
-                    if (cm.AutoLayout) // disposition déduite de l'archive, métadonnées du catalogue
-                    {
-                        m.Natives = analysis.Natives;
-                        m.Packages = analysis.Packages;
-                        m.Deploy = analysis.Deploy;
-                        if (m.SettingsFile == null) m.SettingsFile = analysis.SettingsFile;
-                    }
+                    if (cm.AutoLayout) ApplyAnalysis(m, analysis); // métadonnées du catalogue
                     m.Source = "nexus";
                     m.Tag = null;
                     m.Version = Versions.FromFileName(path) ?? cm.Version ?? "";
@@ -564,10 +594,7 @@ namespace ERSeamless
                     var name = CleanName(path);
                     m = new InstalledMod { Id = Slug(name, store), Name = name, Source = "manual", Version = Versions.FromFileName(path) ?? "" };
                     Place(dir, m, null);
-                    m.Natives = analysis.Natives;
-                    m.Packages = analysis.Packages;
-                    m.Deploy = analysis.Deploy;
-                    m.SettingsFile = analysis.SettingsFile;
+                    ApplyAnalysis(m, analysis);
                     m.Nexus = NexusIdFromFileName(path);
                 }
                 m.AssetSha = isDir ? null : Files.Sha256(path);
@@ -654,6 +681,11 @@ namespace ERSeamless
         public static async Task<List<KeyValuePair<InstalledMod, CatalogMod>>> FindUpdates(Catalog catalog, ModStore store)
         {
             var result = new List<KeyValuePair<InstalledMod, CatalogMod>>();
+            // une requête par dépôt, toutes en même temps : la boucle ci-dessous lit ensuite le cache (erreurs journalisées par la boucle)
+            var sources = store.Mods.Where(m => m.Source == "github" || m.Source == "nexus")
+                                    .Select(m => catalog.Find(m.Id)).Where(cm => cm != null && cm.Source.IsGitHub)
+                                    .GroupBy(cm => cm.Source.Repo + "|" + cm.Source.Tag).Select(g => g.First().Source);
+            await Task.WhenAll(sources.Select(async s => { try { await GitHub.GetRelease(s.Repo, s.Tag); } catch { } }));
             foreach (var m in store.Mods.ToList())
             {
                 var cm = catalog.Find(m.Id);
@@ -677,8 +709,8 @@ namespace ERSeamless
         }
 
         /// <summary>
-        /// Mods tenus à jour depuis GitHub pour lesquels Nexus annonce déjà une version plus récente : le dépôt GitHub de
-        /// Seamless n'est qu'un miroir de Nexus, publié parfois avec quelques jours de retard.
+        /// Mods du catalogue pour lesquels Nexus annonce une version plus récente que celle installée : mods venant de Nexus,
+        /// ou mods GitHub dont le dépôt n'est qu'un miroir de Nexus en retard. Jamais pour une version figée (tag).
         /// </summary>
         public static List<KeyValuePair<InstalledMod, string>> NexusAhead(Catalog catalog, ModStore store, IDictionary<int, string> nexusVersions)
         {
@@ -687,7 +719,7 @@ namespace ERSeamless
             {
                 var cm = catalog.Find(m.Id);
                 string v;
-                if (cm == null || cm.Nexus <= 0 || !cm.Source.IsGitHub || cm.Source.Tag != null || !nexusVersions.TryGetValue(cm.Nexus, out v)) continue;
+                if (cm == null || cm.Nexus <= 0 || cm.Source.Tag != null || !nexusVersions.TryGetValue(cm.Nexus, out v)) continue;
                 var order = Versions.Compare(v, m.Version);
                 if (order.HasValue && order.Value > 0) result.Add(new KeyValuePair<InstalledMod, string>(m, v));
             }
@@ -794,7 +826,8 @@ namespace ERSeamless
 
         /// <summary>
         /// Écrit locale\&lt;langue&gt;.json à partir du english.json installé : depuis la v1.9, le mod n'embarque plus que l'anglais.
-        /// Une traduction n'est reprise que si le texte anglais est celui pour lequel elle a été faite.
+        /// Une langue n'est écrite que si chaque texte anglais est celui pour lequel la traduction a été faite : sinon le fichier
+        /// est absent et le mod reste en anglais, plutôt que de mélanger les deux langues.
         /// </summary>
         public static int WriteLocales(string seamlessFolder, ICollection<string> skip, bool overwrite)
         {
@@ -809,21 +842,32 @@ namespace ERSeamless
                 var path = Path.Combine(dir, lang + ".json");
                 if ((skip != null && skip.Contains(lang, StringComparer.OrdinalIgnoreCase)) || (!overwrite && File.Exists(path))) continue;
                 var translation = ResourceJson("locale." + lang + ".json");
-                var sb = new StringBuilder("{\n");
-                foreach (var kv in current)
+                var missing = current.Keys.Count(k => Translated(current, reference, translation, k) == null);
+                if (missing > 0)
                 {
-                    var en = kv.Value as string ?? "";
-                    object refEn, tr;
-                    var value = reference.TryGetValue(kv.Key, out refEn) && (refEn as string) == en && translation.TryGetValue(kv.Key, out tr)
-                        ? (string)tr : en;
+                    Log.Write("locale " + lang + " not written: " + missing + " texts not translated for this Seamless version");
+                    continue;
+                }
+                var sb = new StringBuilder("{\n");
+                foreach (var key in current.Keys)
+                {
                     if (sb.Length > 2) sb.Append(",\n");
-                    sb.Append("\t\"").Append(JsonEscape(kv.Key)).Append("\": \"").Append(JsonEscape(value)).Append('"');
+                    sb.Append("\t\"").Append(JsonEscape(key)).Append("\": \"").Append(JsonEscape(Translated(current, reference, translation, key))).Append('"');
                 }
                 sb.Append("\n}\n");
                 File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
                 written++;
             }
             return written;
+        }
+
+        /// <summary>Traduction de key, ou null si le texte anglais du mod n'est plus celui pour lequel elle a été faite.</summary>
+        static string Translated(Dictionary<string, object> current, Dictionary<string, object> reference, Dictionary<string, object> translation, string key)
+        {
+            object en, refEn, tr;
+            current.TryGetValue(key, out en);
+            if (!reference.TryGetValue(key, out refEn) || (refEn as string) != (en as string ?? "")) return null;
+            return translation.TryGetValue(key, out tr) ? tr as string : null;
         }
 
         static Dictionary<string, object> ResourceJson(string name)
@@ -909,8 +953,7 @@ namespace ERSeamless
                 await Task.Run(() =>
                 {
                     var dir = Files.ExtractToTemp(zip);
-                    if (Directory.Exists(Paths.Me3Dir)) Files.DeleteDir(Paths.Me3Dir);
-                    Directory.Move(dir, Paths.Me3Dir);
+                    Files.Swap(dir, Paths.Me3Dir);
                     File.WriteAllText(Path.Combine(Paths.Me3Dir, "version.txt"), rel.Tag);
                 });
             }
@@ -981,9 +1024,8 @@ namespace ERSeamless
         static Dictionary<string, object> Query(string query)
         {
             string resp;
-            using (var wc = new WebClient { Encoding = Encoding.UTF8 })
+            using (var wc = Program.Web())
             {
-                wc.Headers[HttpRequestHeader.UserAgent] = "ERSeamlessLauncher/" + Program.Version;
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";
                 resp = wc.UploadString(Endpoint, "POST", Json.Write(new Dictionary<string, object> { { "query", query } }));
             }
